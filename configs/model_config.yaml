@@ -1,0 +1,80 @@
+DEFAULT_MODEL:
+  platform: "ollama"    # 默认平台：ollama
+  model_name: "deepseek-r1:1.5b"  # ollama 默认模型
+
+DEFAULT_EMBEDDING_MODEL:
+  platform: "ollama"
+  model_name: "bge-large:latest"
+
+# 平台配置（ollama + aliyun—使用的openai）
+PLATFORMS:
+  - platform_name: "ollama"
+    api_base_url: "http://127.0.0.1:11434/v1"
+    api_key: "EMPTY"          # ollama 无需密钥
+    timeout: 60               # 超时时间
+    concurrency: 5            # 并发数
+  - platform_name: "aliyun"
+    api_base_url: "${ALIYUN_BASE_URL}"
+    api_key: "${ALIYUN_API_KEY}"  # 占位符，从.env读取
+    timeout: 30
+    concurrency: 3
+  - platform_name: "openai"
+    api_base_url: "${OPENAI_BASE_URL}"
+    api_key: "${OPENAI_API_KEY}"  # 占位符，从.env读取
+    timeout: 30
+    concurrency: 3
+
+# 模型默认参数（支持不同平台的模型）
+MODEL_DEFAULTS:
+  # ollama 平台的模型参数
+  ollama:
+    deepseek-r1:1.5b:
+      temperature: 0.9
+      max_tokens: 4096
+      history_len: 10
+    qwen3-4b:latest:
+      temperature: 0.7
+      max_tokens: 8192
+      history_len: 15
+
+    embedding:
+      "bge-large:latest":
+        dimensions: 1024
+        context_size: 512
+
+  # openai 平台的模型参数
+  openai:
+    gpt-3.5-turbo:
+      temperature: 0.7
+      max_tokens: 4096
+      history_len: 10
+    gpt-4o-mini:
+      temperature: 0.5
+      max_tokens: 16384
+      history_len: 20
+  # 阿里云 平台的模型参数
+  aliyun:
+    qwen-plus-2025-07-28:
+      temperature: 0.7
+      max_tokens: 4096
+      history_len: 10
+
+# 向量化配置（新增或修改这部分）
+EMBEDDING_CONFIG:
+  # 文本切分配置
+  text_splitter:
+    chunk_size: 280
+    chunk_overlap: 30
+    separators: ["\n\n", "\n", "。", "；", "，", " ", ""]
+  
+  # 向量数据库配置（ChromaDB）- 使用占位符
+  vector_store:
+    type: "chromadb"
+    persist_directory: "${VECTOR_STORE_PATH}"  # 从.env读取
+    collection_name: "txt_data"
+    distance_metric: "cosine"
+  
+  # 批量处理配置
+  batch_settings:
+    batch_size: 100
+    max_concurrency: 3
