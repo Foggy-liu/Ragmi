@@ -3,7 +3,8 @@ RAG 对话
 """
 from utils.message.message import MessageManager
 from typing import Dict, List, Optional
-from langchain_milvus import Milvus
+from pymilvus import MilvusClient
+from langchain_ollama import OllamaEmbeddings
 from utils.models.embedding_model import EmbeddingModel
 import os
 
@@ -17,37 +18,51 @@ class RagModel:
         # 使用全局的 MessageManager，而不是每次创建新的
         self.msg_manager = _global_msg_manager
         # 初始化向量数据库（全局读取一次）
-        self.vector_store = self._load_vector_store()
+        self._client = None
+        self._embed = None
+        self._collection_name = None
+        self._load_vector_store()
 
     def _load_vector_store(self):
         """
         从 Milvus 加载已存在的向量数据库
         只在初始化时执行一次
         """
-        # 1. 初始化embedding模型
-        embed_model = EmbeddingModel.create_default()
-
-        # 2. 获取 Milvus 连接配置
-        milvus_config = embed_model.get_milvus_config()
-
         try:
-            # 3. 连接到 Milvus 向量数据库
-            vector_store = Milvus(
-                embedding_function=embed_model.embedding,
-                collection_name=milvus_config.get("collection_name", "txt_data"),
-                connection_args={
-                    "host": milvus_config.get("host", "127.0.0.1"),
-                    "port": milvus_config.get("port", "19530"),
-                },
-                drop_old=False,  # 不删除已有集合
-            )
+            # 1. 初始化embedding模型
+            embed_model = EmbeddingModel.create_default()
+
+            # 2. 获取 Milvus 连接配置
+            milvus_config = embed_model.get_milvus_config()
+
+            # 3. 初始化 Ollama embedding
+            self._embed = OllamaEmbeddings(model='bge-large', base_url='http://localhost:11434')
+
+            # 4. 连接到 Milvus
+            host = milvus_config.get('host', '127.0.0.1')
+            port = milvus_config.get('port', '19530')
+            self._client = MilvusClient(uri=f"http://{host}:{port}")
+
+            # 5. 获取集合名称
+            self._collection_name = milvus_config.get('collection_name', 'txt_data')
+
+            # 6. 检查集合是否存在
+            if not self._client.has_collection(self._collection_name):
+                print(f"集合 {self._collection_name} 不存在，请先运行 vector_main.py")
+                self._client = None
+                return
+
+            # 7. 确保集合已加载
+            load_state = self._client.get_load_state(collection_name=self._collection_name)
+            if load_state['state'] != 'Loaded':
+                self._client.load_collection(collection_name=self._collection_name)
 
             print(f"成功连接 Milvus 向量库")
-            print(f"集合名称: {milvus_config.get('collection_name', 'txt_data')}")
-            return vector_store
+            print(f"集合名称: {self._collection_name}")
+
         except Exception as e:
             print(f"连接 Milvus 向量库失败：{e}")
-            return None
+            self._client = None
 
     def _search_similar_chunks(self, query: str, top_k: int = 5) -> List[str]:
         """
@@ -55,16 +70,26 @@ class RagModel:
         每次用户提问时执行
         """
         # 1. 检查向量库是否已加载
-        if not self.vector_store:
+        if not self._client:
             print("向量库未加载，无法进行相似度搜索")
             return []
 
         try:
-            # 2. 执行相似度搜索
-            docs = self.vector_store.similarity_search(query, k=top_k)
+            # 2. 将查询文本转为向量
+            query_vector = self._embed.embed_query(query)
 
-            # 3. 提取文档内容
-            chunks = [doc.page_content for doc in docs]
+            # 3. 执行相似度搜索
+            results = self._client.search(
+                collection_name=self._collection_name,
+                data=[query_vector],
+                limit=top_k,
+                output_fields=['text']
+            )
+
+            # 4. 提取文档内容
+            chunks = []
+            for hit in results[0]:
+                chunks.append(hit.entity.get('text', ''))
 
             return chunks
         except Exception as e:

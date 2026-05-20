@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   Milvus:
-    image: milvusdb/milvus:v2.4.0
+    image: milvusdb/milvus:v2.3.14
     container_name: docker-milvus-standalone
     ports:
       - "19530:19530"
@@ -16,8 +16,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
       timeout: 20s
-      retries: 3
-      start_period: 90s
+      retries: 5
+      start_period: 120s
 
 volumes:
   milvus-data:
