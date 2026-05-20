@@ -1,12 +1,12 @@
 DEFAULT_MODEL:
-  platform: "ollama"    # 默认平台：ollama
-  model_name: "deepseek-r1:1.5b"  # ollama 默认模型
+  platform: "minimax"    # 默认平台：minimax
+  model_name: "MiniMax-M2.7"  # MiniMax 默认模型
 
 DEFAULT_EMBEDDING_MODEL:
   platform: "ollama"
   model_name: "bge-large:latest"
 
-# 平台配置（ollama + aliyun—使用的openai）
+# 平台配置（ollama + aliyun + minimax—使用的openai）
 PLATFORMS:
   - platform_name: "ollama"
     api_base_url: "http://127.0.0.1:11434/v1"
@@ -22,6 +22,11 @@ PLATFORMS:
     api_base_url: "${OPENAI_BASE_URL}"
     api_key: "${OPENAI_API_KEY}"  # 占位符，从.env读取
     timeout: 30
+    concurrency: 3
+  - platform_name: "minimax"
+    api_base_url: "${MINIMAX_BASE_URL}"
+    api_key: "${MINIMAX_API_KEY}"  # MiniMax API密钥
+    timeout: 60
     concurrency: 3
 
 # 模型默认参数（支持不同平台的模型）
@@ -58,6 +63,16 @@ MODEL_DEFAULTS:
       temperature: 0.7
       max_tokens: 4096
       history_len: 10
+    qwen3.5-plus:
+      temperature: 0.7
+      max_tokens: 8192
+      history_len: 15
+  # MiniMax 平台的模型参数
+  minimax:
+    MiniMax-M2.7:
+      temperature: 0.7
+      max_tokens: 8192
+      history_len: 15
 
 # 向量化配置（新增或修改这部分）
 EMBEDDING_CONFIG:
@@ -67,12 +82,14 @@ EMBEDDING_CONFIG:
     chunk_overlap: 30
     separators: ["\n\n", "\n", "。", "；", "，", " ", ""]
   
-  # 向量数据库配置（ChromaDB）- 使用占位符
+  # 向量数据库配置（Milvus）
   vector_store:
-    type: "chromadb"
-    persist_directory: "${VECTOR_STORE_PATH}"  # 从.env读取
-    collection_name: "txt_data"
-    distance_metric: "cosine"
+    type: "milvus"
+    milvus:
+      host: "${MILVUS_HOST}"
+      port: "${MILVUS_PORT}"
+      collection_name: "txt_data"
+      distance_metric: "cosine"
   
   # 批量处理配置
   batch_settings:

@@ -1,0 +1,41 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docker-ragmi-app
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    environment:
+      - LLM_ROOT=/app
+      - MILVUS_HOST=host.docker.internal
+      - MILVUS_PORT=19530
+    env_file:
+      - .env
+    volumes:
+      - ./txt:/app/txt
+    network_mode: host
+    depends_on:
+      - milvus
+
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    container_name: docker-milvus-standalone
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    environment:
+      ETCD_USE_EMBED_STORAGE: "true"
+      COMMON_SECURITY_AUTHORIZATIONENABLED: "false"
+    volumes:
+      - milvus-data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  milvus-data:

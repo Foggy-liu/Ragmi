@@ -1,4 +1,5 @@
 from langchain_ollama import OllamaEmbeddings
+from langchain_milvus import Milvus
 from dotenv import load_dotenv
 import os
 import yaml
@@ -84,6 +85,19 @@ class EmbeddingModel:
                 vector_config["persist_directory"] = os.getenv(env_key, path)
 
         return vector_config
+
+    def get_milvus_config(self):
+        """获取 Milvus 连接配置"""
+        embed_config = self.yaml_config.get("EMBEDDING_CONFIG", {})
+        milvus_config = embed_config.get("milvus", {}).copy()
+
+        # 从环境变量替换占位符
+        for k, v in milvus_config.items():
+            if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
+                env_key = v[2:-1]
+                milvus_config[k] = os.getenv(env_key, v)
+
+        return milvus_config
 
     @staticmethod
     def create_default():

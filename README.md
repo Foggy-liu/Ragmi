@@ -1,231 +1,222 @@
-# 个人知识库问答系统
+# RAGMI - 基于大模型的知识库问答系统
 
-## 项目简介
+[![GitHub stars](https://img.shields.io/github/stars/Foggy-liu/Ragmi)](https://github.com/Foggy-liu/Ragmi)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
 RAGMI 是一个基于检索增强生成（RAG）技术的个人知识库问答系统。系统支持上传多种格式文档，自动解析、切分、向量化存储，并通过大模型结合检索结果生成高质量回答。同时支持纯对话模式和多模型切换，提供完整的前后端分离架构。
 
-## 技术架构
+## 项目地址
 
-### 整体架构图
+**https://github.com/Foggy-liu/Ragmi**
 
-```
-用户打开系统
-        ↓
-[交互层] Streamlit前端
-├── 模式选择 → 文档上传（RAG模式） → 输入问题
-        ↓
-[接口层] FastAPI路由分发
-├── 根据模式选择对应路由
-        ↓
-[业务层] 模式处理核心
-├── 路由判断
-        ├─────────────┐
-        ↓             ↓
-┌─────────────┐  ┌─────────────┐
-│  纯Chat业务  │  │   RAG业务     │
-│             │  │              │
-│ 调用[工具层]  │  │ 调用[工具层]  │
-│ 通用模型工具  │  │ 1. 文档解析工具│
-│             │  │ 2. 文本切分工具│
-│             │  │ 3. 向量检索工具│
-│             │  │ 4. 通用模型工具│
-└─────────────┘  └─────────────┘
-        ↓             ↓
-[数据层] 存储/读取      [数据层] 存储/读取
-├── 历史记录          ├── 1. 向量库
-                      ├── 2. 切分文本
-                      └── 3. 原始文档
-        ↓             ↓
-   返回答案          返回增强答案
-        ↓
-[交互层] 前端展示结果
-```
+---
 
-### 项目目录结构
+## 功能特性
 
-```
-ragmi/
-├── .streamlit/           # Streamlit 配置文件
-├── api/                  # FastAPI 接口层
-│   ├── api_chat.py       # 纯对话接口
-│   ├── api_file.py       # 文件上传接口
-│   ├── api_model.py      # 模型切换接口
-│   ├── api_rag.py        # RAG 问答接口
-│   ├── api_vector.py     # 向量检索接口
-│   └── dependencies.py   # 依赖注入
-├── configs/              # 配置文件
-│   └── model_config.yaml # 模型配置
-├── core/                 # 核心业务层
-│   ├── chat/             # 纯对话业务
-│   └── rags/             # RAG 业务
-├── data/                 # 向量数据库存储
-├── documents/            # 原始文档
-├── txt/                  # 解析后的文本
-├── utils/                # 工具层
-│   ├── docs/             # 文档解析工具
-│   │   ├── manager/      # 扫描、过滤、输出管理
-│   │   └── process/      # MD/Word/PDF 处理器
-│   ├── message/          # 消息管理工具
-│   ├── models/           # 模型管理工具
-│   └── txt_spliter/      # 文本切分工具
-├── web_page/             # Streamlit 前端页面
-├── .env                  # 环境变量（含API密钥）
-├── main.py               # FastAPI 入口
-├── main_web.py           # Streamlit 入口
-└── requirements.txt      # 依赖列表
-```
-
-## 核心功能
-
-### 1. 多模式对话
+### 多模式对话
 
 - **纯对话模式**：直接与大模型交互，支持多轮对话和历史管理
 - **RAG 模式**：基于上传文档的知识库问答，检索增强生成
+- Agent 自动判断——无需人工切换模式
 
-### 2. 文档处理流程
+### ReAct Agent 核心
 
-```
-文档上传 → 格式解析 → 文本清洗 → 智能切分 → 向量化 → 存储到 ChromaDB
-```
+- 完整 ReAct 循环：Reasoning → Acting → Observation → Evaluation
+- 最多 3 轮自纠正迭代（Self-Correction），回答不充分时自动重试
+- 两阶段质量评估：规则匹配（FAIL_PATTERNS/SUCCESS_PATTERNS）快速门控 + LLM Reflection 深度评估
+- JSON 结构化输出优先 + 三级 Regex Fallback 降级解析
+- RAG 超时 30s → 自动降级到 ChatTool 的容错机制
 
-支持的文档格式：
-- PDF（.pdf）
-- Word（.docx）
-- Markdown（.md）
-- 纯文本（.txt）
+### 多模型支持
 
-### 3. 多模型支持
-
-通过统一配置管理，支持：
 - **本地模型**：Ollama（Llama3、Qwen、DeepSeek 等）
-- **云端模型**：阿里云百炼（通义千问系列）
+- **云端模型**：阿里云百炼（通义千问系列）、MiniMax
+- 运行时动态切换，无需重启服务
 
-模型切换无需修改代码，通过 API 动态切换。
+### Milvus 向量检索
 
-### 4. 会话管理
+- 使用 Milvus 作为向量数据库（Docker 部署，不占本地内存）
+- Embedding 模型：bge-large（1024 维向量）
+- 相似度检索 + Top-K 召回，支持增量更新
 
-- 基于 `session_id` 的会话隔离
-- 自动维护对话历史
-- 支持历史截断（保留最近20条消息）
-- 一键清除对话历史
-
-### 5. 向量检索
-
-- 使用 ChromaDB 作为向量数据库
-- Embedding 模型：bge-large（512 token 限制）
-- 相似度检索 + Top-K 召回
-- 支持增量更新
-
-## 技术亮点
-
-### 1. 分层架构设计
-
-- **工具层**：文档解析、文本切分、模型管理、消息管理
-- **业务层**：纯对话、RAG 问答
-- **接口层**：FastAPI RESTful API
-- **前端层**：Streamlit 交互界面
-
-### 2. 模型管理设计
-
-- 单例模式管理模型实例，避免重复创建
-- 懒加载机制，按需创建
-- 统一配置文件驱动，支持多平台切换
-
-### 3. 文档解析优化
-
-- 增量更新：基于 MD5 哈希 + 文件修改时间，避免重复处理
-- 解耦设计：处理器注册机制，新增格式只需添加处理器
-- 冲突解决：输出路径自动添加计数器
-
-### 4. 文本切分优化
+### 智能文本切分
 
 - 双阶段切分：LangChain 机械切分 + 智能拼接
-- 语义优先：按段落、句子边界切分
-- 自适应合并：动态合并过小片段
+- 小于 80 字符的片段自动向后合并至 300 字符上限
+- 30 字符重叠窗口保留跨 chunk 上下文
 
-### 5. 依赖注入设计
+---
 
-- FastAPI 依赖注入实现模型管理器的全局共享
-- 所有路由共享同一实例，避免重复初始化
+## 技术架构
+
+```
+用户
+  ↓  Streamlit 前端（8501）
+FastAPI 后端（8000）
+  ↓
+Agent 控制器（ReAct 循环）
+  ├── RAG Tool  →  Milvus 向量检索  →  LLM 生成
+  └── Chat Tool  →  直接 LLM 生成
+  ↓
+Ollama / 阿里云 / MiniMax
+```
+
+### 项目目录
+
+```
+ragmi/
+├── api/                  # FastAPI 接口层
+│   ├── api_agent.py     # Agent 入口
+│   ├── api_chat.py      # 纯对话接口
+│   ├── api_file.py      # 文件上传接口
+│   ├── api_rag.py       # RAG 接口
+│   └── dependencies.py  # 依赖注入
+├── agent/                # Agent 核心
+│   ├── controller.py    # ReAct 循环入口
+│   ├── react_prompt.py  # 提示词模板
+│   ├── core/
+│   │   ├── reasoning.py   # LLM 输出解析
+│   │   ├── strategy.py    # 超时/重试/降级
+│   │   └── evaluation.py  # 质量评估
+│   └── tools/
+│       ├── rag_tool.py   # RAG 工具
+│       └── chat_tool.py  # Chat 工具
+├── core/
+│   ├── chat/            # 纯对话业务
+│   └── rags/            # RAG 业务
+├── utils/
+│   ├── docs/           # 文档解析
+│   ├── models/         # 模型管理
+│   ├── txt_spliter/    # 文本切分
+│   └── message/        # 会话管理
+├── configs/            # 配置文件
+├── txt/                # 原始文稿
+├── docker-compose.yml  # Docker 部署
+└── requirements.txt    # 依赖列表
+```
+
+---
 
 ## 快速开始
 
 ### 环境要求
 
 - Python 3.11+
+- Docker + Docker Compose
 - 可选：Ollama（本地模型）
 
-### 安装依赖
+### 1. 启动 Milvus 向量数据库
+
+```bash
+docker-compose -f docker-compose-milvus.yml up -d
+```
+
+等待约 90 秒后验证：
+
+```bash
+curl http://localhost:9091/healthz
+```
+
+### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 配置环境变量
-
-复制 `.env.example` 为 `.env`，填写配置：
+### 3. 配置环境变量
 
 ```bash
-# 阿里云配置
-ALIYUN_API_KEY=your_api_key_here
+cp .env.example .env
+# 编辑 .env，填入 API 密钥
+```
+
+关键配置项：
+```bash
+# 阿里云（通义千问）
+ALIYUN_API_KEY=your_key
 ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-ALIYUN_MODEL_NAME=qwen-plus
 
-# 项目根目录
-LLM_ROOT=D:\\PythonProject\\ragmi
+# MiniMax
+MINIMAX_API_KEY=your_key
+MINIMAX_BASE_URL=https://api.minimax.com/v1
+
+# Milvus
+MILVUS_HOST=127.0.0.1
+MILVUS_PORT=19530
 ```
 
-### 启动服务
-
-**启动 FastAPI 后端：**
+### 4. 向量化文档
 
 ```bash
+cd utils/txt_spliter
+python vector_main.py
+```
+
+### 5. 启动服务
+
+```bash
+# 终端1：FastAPI 后端
 python main.py
-```
 
-**启动 Streamlit 前端：**
-
-```bash
+# 终端2：Streamlit 前端
 streamlit run main_web.py
 ```
 
-### 使用流程
+打开 http://localhost:8501 即可使用。
 
-1. 打开 Streamlit 前端（默认 http://localhost:8501）
-2. 选择对话模式（纯对话 / RAG 模式）
-3. RAG 模式下先上传文档
-4. 输入问题，获取回答
-5. 支持切换模型、清除历史
+---
 
-## RAG 优化方向
+## Docker 部署（推荐）
 
-### 索引优化
+### 方式一：一键部署（同时启动 App + Milvus）
 
-- **摘要索引**：为文档片段生成摘要，提升检索精度
-- **假设性问题索引**：预生成可能问题，反推原始文档
-- **元数据索引**：提取文档元数据辅助检索
+```bash
+docker-compose up -d
+```
 
-### 查询优化
+### 方式二：分别启动
 
-- 用户提问改写（纠错、语义扩展）
-- 多轮对话上下文融合
+```bash
+# 终端1：启动 Milvus
+docker-compose -f docker-compose-milvus.yml up -d
 
-### 检索优化
+# 终端2：启动 App
+docker-compose up -d app
+```
 
-- 重排序（Re-ranking）
-- 混合检索（向量 + 关键词）
+---
+
+## 技术亮点
+
+### ReAct Agent + Self-Correction
+
+Agent 实现完整的 ReAct 循环，通过两阶段质量评估（规则匹配 + LLM Reflection）判断回答是否充分，不充分时自动触发重试迭代。
+
+### 超时控制 + 自动降级
+
+RAG 操作涉及向量检索 + LLM 生成两个慢环节。通过 `threading.Thread` + `join(timeout)` 实现 30s 超时控制，超时时自动降级到 ChatTool 保证服务可用。
+
+### 多模型统一封装
+
+通过 YAML 配置 + `.env` 占位符替换，实现 Ollama（本地）/ MiniMax / 阿里云三平台统一接口。运行时 `switch_model()` 动态切换，参数优先级：自定义 > 模型默认 > 平台默认。
+
+### 两阶段文本切分
+
+先用 `RecursiveCharacterTextSplitter` 按 `\n\n|\n|。|；|，` 机械切分，再将小于 80 字符的小片段智能合并至 300 字符上限，避免语义碎片化。
+
+---
 
 ## 后续规划
 
-- [ ] 增加数据库持久化（PostgreSQL + Redis）
+- [x] Milvus 向量库替换 ChromaDB
+- [x] Docker 容器化部署
+- [ ] RAG 效果评估体系
+- [ ] 混合检索（向量 + BM25）
 - [ ] 用户认证与权限管理
 - [ ] 文档版本管理
-- [ ] Docker 容器化部署
+
+---
 
 ## 许可证
 
 MIT License
-
----
-
-**项目地址**：[https://github.com/Foggy-liu/Ragmi](https://github.com/Foggy-liu/Ragmi)

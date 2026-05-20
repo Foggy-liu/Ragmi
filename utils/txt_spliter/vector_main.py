@@ -1,37 +1,38 @@
-from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
+from langchain_milvus import Milvus
 from utils.models.embedding_model import EmbeddingModel
 from utils.txt_spliter import spliter
+from dotenv import load_dotenv
+import os
 
 
 def vector_split():
-
     # 1、初始化embedding管理类
     embed_model = EmbeddingModel.create_default()
 
     # 2、初始化切分器
     splitter = spliter.Splitter()
 
-    # 3、切分文件
+    # 3、切分文件（处理 txt/ 目录下所有文件）
     documents = splitter.split_all_files()
 
-    # documents = splitter.split_file('../../txt/01_RAG_intro_md.txt')
+    # 4、从配置文件中获取 Milvus 配置
+    milvus_config = embed_model.get_milvus_config()
 
-    # 4、从配置文件中获取向量数据库的配置
-    vector_config = embed_model.get_vector_store_config()
-
-    # 5、创建向量数据库示例对象
-    vector_store = Chroma.from_documents(
-        documents=documents,  # 传Document对象
-        embedding=embed_model.embedding,  # Chroma会用这个模型
-        persist_directory=vector_config["persist_directory"]  # 数据存储目录位置，从配置文件中读取
+    # 5、创建 Milvus 向量数据库实例
+    vector_store = Milvus.from_documents(
+        documents=documents,  # 传 Document 对象
+        embedding=embed_model.embedding,  # Milvus 用这个模型做向量化
+        collection_name=milvus_config.get("collection_name", "txt_data"),
+        connection_args={
+            "host": milvus_config.get("host", "127.0.0.1"),
+            "port": milvus_config.get("port", "19530"),
+        },
+        drop_old=False,  # 不覆盖已有数据，支持增量
     )
 
-    # embeddings = embed_model.embed_documents(documents[0].page_content)    # 使用embedding，向量化document里面的内容
-    # texts = [doc.page_content for doc in documents]  # 只提取所有documents的文本部分
-    # print(vector_config)
-
-    print(f"向量库创建成功！")
-    print(f"存储位置: {vector_config['persist_directory']}")
+    print(f"Milvus 向量库创建成功！")
+    print(f"集合名称: {milvus_config.get('collection_name', 'txt_data')}")
     print(f"文档片段数: {len(documents)}")
 
     return vector_store
@@ -39,10 +40,3 @@ def vector_split():
 
 if __name__ == '__main__':
     vector_split()
-
-
-
-
-
-
-
