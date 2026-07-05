@@ -31,7 +31,7 @@ documents/img/
 # 向量数据库
 chroma_db/
 *.db
-*.sqlite
+*.sqlite*
 
 # 临时文件
 utils/docs/manager/*.txt
@@ -43,7 +43,12 @@ utils/docs/process/*.txt
 .DS_Store
 Thumbs.db
 
+# 整个 docs/ 是私人参考文档（本地保留阅读，不上传仓）
+docs/
 
-# 数据文件夹（不上传）
-documents/
-txt/
+# Claude 工具链配置与本地会话记忆（不是项目代码）
+.claude/
+memory/
+
+# Docker volumes 数据（Milvus/etcd/minio 持久化数据）
+volumes/
