@@ -1,6 +1,6 @@
 DEFAULT_MODEL:
   platform: "minimax"    # 默认平台：minimax
-  model_name: "MiniMax-M2.7"  # MiniMax 默认模型
+  model_name: "MiniMax-M2.5"  # MiniMax 默认模型（M2.5 版本）
 
 DEFAULT_EMBEDDING_MODEL:
   platform: "ollama"
@@ -70,6 +70,10 @@ MODEL_DEFAULTS:
   # MiniMax 平台的模型参数
   minimax:
     MiniMax-M2.7:
+      temperature: 0.7
+      max_tokens: 8192
+      history_len: 15
+    MiniMax-M2.5:
       temperature: 0.7
       max_tokens: 8192
       history_len: 15

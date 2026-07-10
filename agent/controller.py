@@ -36,14 +36,14 @@ class AgentController:
     """
 
     def __init__(self, model_manager: ModelManager, use_lite: bool = False,
-                 timeout: float = 30.0, max_retries: int = 1):
+                 timeout: float = 120.0, max_retries: int = 1):
         """
         初始化 Agent 控制器
 
         Args:
             model_manager: 模型管理器
             use_lite: 是否使用简化版提示词
-            timeout: 默认超时时间（秒）
+            timeout: 默认超时时间（秒，默认 120 适配 RAG）
             max_retries: 最大重试次数
         """
         self.model_manager = model_manager

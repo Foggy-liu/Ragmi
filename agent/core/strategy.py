@@ -58,13 +58,13 @@ class ToolStrategy:
 
     # 默认工具配置
     DEFAULT_RAG_CONFIG = ToolConfig(
-        timeout=30.0,
+        timeout=120.0,             # RAG: embedding + search + LLM 通常 30-90s
         max_retries=1,
         retry_on_timeout=True
     )
 
     DEFAULT_CHAT_CONFIG = ToolConfig(
-        timeout=20.0,
+        timeout=60.0,              # Chat: 单次 LLM 通常 10-30s
         max_retries=1,
         retry_on_timeout=False  # Chat 通常不会超时
     )
@@ -83,7 +83,7 @@ class ToolStrategy:
         # 各工具配置
         self.tool_configs: Dict[str, ToolConfig] = {
             "rag": ToolConfig(timeout=timeout, max_retries=max_retries),
-            "chat": ToolConfig(timeout=20.0, max_retries=1),
+            "chat": ToolConfig(timeout=60.0, max_retries=1),
         }
 
         # 执行统计

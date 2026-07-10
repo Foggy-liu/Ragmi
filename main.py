@@ -7,6 +7,7 @@ from utils.models.model_setting import LLMmodel
 from api.api_chat import appchat
 from api.api_model import appmodel
 from api.api_rag import apprag
+from api.api_agent import appagent
 
 app = FastAPI()
 
@@ -15,7 +16,7 @@ model_manager = ModelManager()
 model_manager.load_config_models()
 
 # 创建默认模型并设置
-default_model = LLMmodel.create_aliyun()
+default_model = LLMmodel.create_minimax()
 model_manager.set_current_model(default_model)  # 只是调用方法，不赋值
 
 # 存入全局状态
@@ -24,6 +25,7 @@ app.state.model_manager = model_manager
 app.include_router(appchat,tags=["chat"])
 app.include_router(appmodel,tags=["model"])
 app.include_router(apprag,tags=["rag"])
+app.include_router(appagent, tags=["agent"])
 
 
 @app.get("/debug/simple")

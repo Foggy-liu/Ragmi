@@ -99,9 +99,14 @@ class LLMmodel:
         return LLMmodel(platform="ollama", model_name=model_name, **kwargs)
 
     @staticmethod
-    def create_aliyun(model_name="qwen-plus-2025-07-28", **kwargs):
+    def create_aliyun(model_name="qwen3.5-plus", **kwargs):
         """快速创建阿里云平台模型实例"""
         return LLMmodel(platform="aliyun", model_name=model_name, **kwargs)
+
+    @staticmethod
+    def create_minimax(model_name="MiniMax-M2.5", **kwargs):
+        """快速创建minimax平台模型实例（默认 MiniMax-M2.5）"""
+        return LLMmodel(platform="minimax", model_name=model_name, **kwargs)
 
     # @staticmethod
     # def create_openai(model_name="gpt-3.5-turbo", **kwargs):

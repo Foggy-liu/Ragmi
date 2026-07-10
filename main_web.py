@@ -6,8 +6,6 @@ UI界面主文件入口，左侧边栏设置
 import streamlit as st
 # 导入streamlit_antd_components库，用于构建UI组件
 import streamlit_antd_components as sac
-# 导入对话页面
-from web_page.dialogue_page import dialogue_page
 # 导入知识库管理页面
 from web_page.knowledge_base import knowledge_base_page
 # 导入MCP管理页面
@@ -19,7 +17,7 @@ if __name__ == '__main__':
     st.set_page_config(page_title="LangChain-Chatchat", layout="centered")
 
     st.markdown("""
-    <style>   
+    <style>
     section[data-testid="stSidebar"] {
         width: 300px !important;
     }
@@ -30,11 +28,13 @@ if __name__ == '__main__':
     # 创建左侧边栏容器
     with st.sidebar:
 
-        # 创建单选按钮组，用于切换不同功能模块："多功能对话"、"RAG 对话"、"知识库管理"
+        # 创建单选按钮组，用于切换不同功能模块
+        # "智能问答" - Agent统一入口，自动判断RAG/Chat
+        # "知识库管理" - 文档上传和管理
+        # "MCP 管理" - MCP连接器管理
         selected_page = sac.menu(
             [
-                sac.MenuItem("多功能对话", icon="chat"),
-                sac.MenuItem("RAG对话", icon="chat-left-text"),
+                sac.MenuItem("智能问答", icon="chat"),
                 sac.MenuItem("知识库管理", icon="hdd-stack"),
                 sac.MenuItem("MCP 管理", icon="plug"),
             ],
@@ -42,13 +42,10 @@ if __name__ == '__main__':
             open_index=0,
         )
 
-    # 根据用户选择，显示对应的功能模块，需要在with st.sidebar:之外实现，不然调用的函数会在左侧边栏内显示
-    if selected_page == "RAG对话":
-        rag_page()
-    elif selected_page == "知识库管理":
+    # 根据用户选择，显示对应的功能模块
+    if selected_page == "知识库管理":
         knowledge_base_page()
     elif selected_page == "MCP 管理":
         mcp_page()
     else:
-        dialogue_page() # 右侧显示对话页面（你在包里实现的 UI）
-
+        rag_page()  # 智能问答（唯一对话入口）
