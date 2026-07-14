@@ -24,7 +24,9 @@ def _get_llm():
     """懒加载 LLM 单例（已 bind_tools = [rag_search]）。"""
     global _llm
     if _llm is None:
-        llm_instance = LLMmodel.create_minimax()
+        # 显式指定 MiniMax-M3：agent LLM 做决策 + 综合，质量优先
+        # 不依赖 yaml 默认配置，避免以后改默认时这里跟着变
+        llm_instance = LLMmodel.create_minimax("MiniMax-M3")
         _llm = llm_instance.chat.bind_tools([rag_search])
     return _llm
 
