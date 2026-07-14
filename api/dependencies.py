@@ -1,6 +1,5 @@
 from fastapi import Request,Depends
 from core.chat.chat import ChatModel
-from agent.controller import AgentController
 
 def get_model_manager(request: Request):
     return request.app.state.model_manager
