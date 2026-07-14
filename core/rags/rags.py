@@ -96,6 +96,15 @@ class RagModel:
             print(f"相似度搜索失败：{e}")
             return []
 
+    def retrieve(self, query: str, top_k: int = 5) -> List[str]:
+        """公开检索入口：只返回 chunks，不调 LLM。
+
+        给 agent 当工具用：方案 2（1-LLM 路径）。
+        内部可演进——未来加重排 / 混合检索时，只改这个方法体，
+        agent 工具代码 0 改动。
+        """
+        return self._search_similar_chunks(query, top_k)
+
     def _build_context_prompt(self, query: str, relevant_chunks: List[str]) -> str:
         """
         构建包含上下文的提示词
