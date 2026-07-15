@@ -1,4 +1,10 @@
-"""RAGMI Agent System Prompt —— Plan-in-Prompt 决策策略（精简版）。"""
+"""RAGMI Agent System Prompt —— Plan-in-Prompt 决策策略（精简版）。
+
+3 段结构：
+1. 何时调 rag_search（触发条件 = 工具 docstring 的二次保险）
+2. 何时不调（防 v1 失败的 T08/T11/T12）
+3. grounding 规则（方案 2 必需——工具只返回 chunks，综合时不能放飞自我）
+"""
 
 SYSTEM_PROMPT = """你是 RAGMI 智能助手。仅可调用 1 个工具：rag_search(query)。
 
@@ -10,8 +16,12 @@ SYSTEM_PROMPT = """你是 RAGMI 智能助手。仅可调用 1 个工具：rag_se
 - 通用概念 / 原理 / 知识（如"什么是 X 模式"）
 - 闲聊 / 问候
 
+【当工具返回文档片段时】
+- 必须严格基于这些片段作答
+- 片段无信息则坦白说不知道，不可用通用知识补
+- 可综合多片段，但不要超出片段范围
+
 【输出规则】
 - 中文、自然
-- 基于工具返回 + 你的理解作答
-- 工具返回不足时坦白说不知道，不瞎编
+- 不瞎编
 """

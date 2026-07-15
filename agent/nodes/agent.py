@@ -48,5 +48,6 @@ def agent_node(state: dict) -> dict:
     # 调 LLM，拿到 AIMessage（含 tool_calls 或纯文本）
     response = llm.invoke(messages)
 
-    # 返回增量（框架自动 merge 到 state.messages）
-    return {"messages": [response]}
+    # 返回增量（框架自动 merge 到 state.messages + state.iterations）
+    # iterations 走 _increment reducer：节点返回 1，框架 (old or 0) + 1 累加
+    return {"messages": [response], "iterations": 1}
