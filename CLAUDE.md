@@ -63,7 +63,7 @@ curl http://localhost:8000/debug/simple
                     ▼
 ┌─────────────────────────────────────────────┐
 │  Data Layer                                 │
-│  - ChromaDB: Vector storage                │
+│  - Milvus: Vector storage                  │
 │  - MessageManager: Session history         │
 └─────────────────────────────────────────────┘
 ```
@@ -78,7 +78,7 @@ agent/
 │   ├── strategy.py        # 工具调度、超时控制、重试、Fallback 降级
 │   └── evaluation.py      # 结果质量评估、Self-Correction
 ├── tools/                # 工具实现
-│   ├── rag_tool.py        # RAG Tool (ChromaDB retrieval + LLM)
+│   ├── rag_tool.py        # RAG Tool (Milvus retrieval + LLM)
 │   └── chat_tool.py       # Chat Tool (direct LLM)
 ├── base/
 │   └── tool.py           # BaseTool 抽象基类
@@ -93,7 +93,7 @@ agent/
 | `agent/core/reasoning.py` | 解析 LLM 输出，JSON 优先 + 正则 fallback |
 | `agent/core/strategy.py` | 超时控制(30s)、重试机制、Fallback 降级 |
 | `agent/core/evaluation.py` | 结果质量评估，触发 Self-Correction |
-| `agent/tools/rag_tool.py` | RAG as a Tool (ChromaDB retrieval + LLM) |
+| `agent/tools/rag_tool.py` | RAG as a Tool (Milvus retrieval + LLM) |
 | `agent/tools/chat_tool.py` | Chat as a Tool (direct LLM) |
 | `core/rags/rags.py` | RAG pipeline: embed → search → generate |
 | `utils/models/model_setting.py` | LLM wrapper (ChatOpenAI), supports multiple platforms |
@@ -107,9 +107,9 @@ Configuration in `configs/model_config.yaml` and `.env`:
 
 ### Vector Database
 
-- **ChromaDB** with SQLite persistence
+- **Milvus** (via `pymilvus.MilvusClient`) with Docker volume persistence
 - **Embedding**: `bge-large` via Ollama (1024 dimensions)
-- Collection: `langchain` (default)
+- Collection name configured in `configs/model_config.yaml` (default: `langchain`)
 
 ## ReAct Agent Pattern
 
