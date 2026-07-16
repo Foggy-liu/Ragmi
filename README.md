@@ -19,13 +19,14 @@ RAGMI 是一个基于检索增强生成（RAG）技术的个人知识库问答�
 - **RAG 模式**：基于上传文档的知识库问答，检索增强生成
 - Agent 自动判断——无需人工切换模式
 
-### ReAct Agent 核心
+### LangGraph ReAct Agent (v2.1)
 
-- 完整 ReAct 循环：Reasoning → Acting → Observation → Evaluation
-- 最多 3 轮自纠正迭代（Self-Correction），回答不充分时自动重试
-- 两阶段质量评估：规则匹配（FAIL_PATTERNS/SUCCESS_PATTERNS）快速门控 + LLM Reflection 深度评估
-- JSON 结构化输出优先 + 三级 Regex Fallback 降级解析
-- RAG 超时 30s → 自动降级到 ChatTool 的容错机制
+- **LangGraph StateGraph**：agent / tools / reflect 三节点，agent → {tools, reflect, END}，reflect → {agent, END}
+- **Self-Reflection 闭环**（LLM-as-judge）：每轮回答后调反思 LLM 评判质量，不充分时把 critique 作为上下文追加让 agent 重答（最多 1 次）
+- **双计数器保护**：`iterations` (max 5) 控制 agent 总调用次数，`reflection_count` (max 1) 控制反思次数，超限强制兜底放行
+- **3 层 JSON 解析容错**：`json.loads` → 正则提取 `{...}` → fail-safe 默认 insufficient
+- **异常兜底**：`runtime.ask()` 包 `try/except`，LLM 调用失败/超时不会 500，返回结构化错误响应
+- **Debug 元数据**：返回 `{answer, iterations, reflection_count, score, tool_called}` 用于评估和调试
 
 ### 多模型支持
 
@@ -54,43 +55,53 @@ RAGMI 是一个基于检索增强生成（RAG）技术的个人知识库问答�
   ↓  Streamlit 前端（8501）
 FastAPI 后端（8000）
   ↓
-Agent 控制器（ReAct 循环）
-  ├── RAG Tool  →  Milvus 向量检索  →  LLM 生成
-  └── Chat Tool  →  直接 LLM 生成
+LangGraph Agent（图编排）
+  ├── agent 节点    (决策: rag vs chat)
+  ├── tools 节点    (rag_search: Milvus 检索 → LLM 生成)
+  └── reflect 节点  (LLM-as-judge: 评判答案质量)
   ↓
+Milvus (19530) → bge-large → LLM
 Ollama / 阿里云 / MiniMax
 ```
 
-### 项目目录
+### 项目目录 (v2.1)
 
 ```
 ragmi/
 ├── api/                  # FastAPI 接口层
-│   ├── api_agent.py     # Agent 入口
+│   ├── api_agent.py     # /agent/chat 入口
 │   ├── api_chat.py      # 纯对话接口
 │   ├── api_file.py      # 文件上传接口
 │   ├── api_rag.py       # RAG 接口
 │   └── dependencies.py  # 依赖注入
-├── agent/                # Agent 核心
-│   ├── controller.py    # ReAct 循环入口
-│   ├── react_prompt.py  # 提示词模板
-│   ├── core/
-│   │   ├── reasoning.py   # LLM 输出解析
-│   │   ├── strategy.py    # 超时/重试/降级
-│   │   └── evaluation.py  # 质量评估
-│   └── tools/
-│       ├── rag_tool.py   # RAG 工具
-│       └── chat_tool.py  # Chat 工具
+├── agent/                # Agent 核心（LangGraph）
+│   ├── graph.py         # StateGraph 装配（agent/tools/reflect 三节点）
+│   ├── runtime.py       # 统一入口 ask() + 异常兜底 + Debug 元数据
+│   ├── state.py         # AgentState + MAX_ITERS=5 + MAX_REFL=1
+│   ├── nodes/
+│   │   ├── agent.py     # agent 节点（决策 + 综合）
+│   │   ├── reflect.py   # 反思节点（LLM-as-judge + 3 层 JSON 容错）
+│   │   └── should_continue.py  # 条件边路由
+│   ├── tools/
+│   │   └── rag_tool.py  # rag_search 工具（Milvus 检索 + LLM 生成）
+│   └── prompts/
+│       ├── system_prompt.py    # Agent 主提示词
+│       └── reflect_prompt.py   # 反思评判提示词
 ├── core/
 │   ├── chat/            # 纯对话业务
-│   └── rags/            # RAG 业务
+│   └── rags/            # RAG 业务（Milvus 检索 + bge-large）
 ├── utils/
 │   ├── docs/           # 文档解析
-│   ├── models/         # 模型管理
-│   ├── txt_spliter/    # 文本切分
+│   ├── models/         # 模型管理（Ollama/阿里云/MiniMax）
+│   ├── txt_spliter/    # 文本切分 + Milvus 索引构建
 │   └── message/        # 会话管理
+├── test/                # 评估与测试
+│   ├── agent_test_cases.json   # 12 个评估 case (T01-T12)
+│   ├── run_agent_eval.py       # 离线评估入口（agent_eval_results.json）
+│   ├── test_reflect.py         # 反思节点单元测试
+│   └── langsmith_*.py          # LangSmith 集成（setup/evaluators/eval）
 ├── configs/            # 配置文件
-├── txt/                # 原始文稿
+├── docs/superpowers/   # 设计文档 + 实施计划
 ├── docker-compose.yml  # Docker 部署
 └── requirements.txt    # 依赖列表
 ```
@@ -188,13 +199,21 @@ docker-compose up -d app
 
 ## 技术亮点
 
-### ReAct Agent + Self-Correction
+### Self-Reflection 闭环（v2.1）
 
-Agent 实现完整的 ReAct 循环，通过两阶段质量评估（规则匹配 + LLM Reflection）判断回答是否充分，不充分时自动触发重试迭代。
+LLM-as-judge 模式：每轮回答后调反思 LLM 评判 `is_sufficient` + `critique`，不通过时把 critique 作为 AIMessage 追加让 agent 重答。3 层 JSON 解析容错（`json.loads` → 正则提取 `{...}` → fail-safe 默认 insufficient），`_to_bool()` 处理 LLM 返回字符串 `'false'` 的情况。
 
-### 超时控制 + 自动降级
+### 双计数器兜底
 
-RAG 操作涉及向量检索 + LLM 生成两个慢环节。通过 `threading.Thread` + `join(timeout)` 实现 30s 超时控制，超时时自动降级到 ChatTool 保证服务可用。
+`iterations` (max 5) 控制 agent 节点总调用次数，`reflection_count` (max 1) 控制反思节点调用次数。两个 reducer 都是 `Annotated[int, _increment]`，节点返回 1 即可自动累加。超限在 `should_continue` 和 `reflect_node` 短路强制放行，避免无限循环。
+
+### LangSmith 离线评估
+
+`test/langsmith_setup.py` 建 Dataset（12 个 case）→ `test/langsmith_evaluators.py` 提供两个 evaluator（`tool_choice_evaluator` + `answer_keyword_evaluator`）→ `test/langsmith_eval.py --prefix <name>` 上传实验。在 [smith.langchain.com](https://smith.langchain.com) 查看 trace + 评分。
+
+### 超时控制 + 异常兜底
+
+agent 节点 `.with_config({"timeout": 30})`；`runtime.ask()` 包 `try/except`，LLM 调用失败不会 500，统一返回结构化错误响应。Debug 模式返回 `{iterations, reflection_count, score, tool_called}` 用于评估和调试。
 
 ### 多模型统一封装
 
@@ -206,11 +225,38 @@ RAG 操作涉及向量检索 + LLM 生成两个慢环节。通过 `threading.Thr
 
 ---
 
+## 评估结果
+
+12 个 case 在 MiniMax-M3 + Milvus 实测：
+
+| 指标 | v2 baseline | v2.1 (with Reflection) |
+|------|-------------|------------------------|
+| 总准确率 | 92% | 91.7% (持平) |
+| RAG 类 | 80% | 80% (4/5) |
+| Chat 类 | 100% | 100% (7/7) |
+| 反思触发率 | 0 | 1 次/case (T09 触发 2 次) |
+| 最大 iterations | 1 | 5 (T11 简历) |
+
+**结论**：反思没提升准确率（T06 "RAG 的核心定义" 路由错误无法事后修复），但增加了可观测性（`iterations` + `reflection_count`）。
+
+跑评估：
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py
+PYTHONIOENCODING=utf-8 python test/langsmith_eval.py --prefix v2.1-reflection
+```
+
+---
+
 ## 后续规划
 
 - [x] Milvus 向量库替换 ChromaDB
 - [x] Docker 容器化部署
-- [ ] RAG 效果评估体系
+- [x] Self-Reflection 闭环
+- [x] LangSmith 离线评估
+- [ ] 工具路由优化（修 T06 "RAG 的核心定义" 类问题）
+- [ ] Faithfulness 评估（检查 RAG 答案是否真的用了检索片段）
+- [ ] v2.2 会话管理 / 多轮记忆
 - [ ] 混合检索（向量 + BM25）
 - [ ] 用户认证与权限管理
 - [ ] 文档版本管理
