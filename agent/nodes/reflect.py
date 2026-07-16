@@ -88,15 +88,7 @@ def reflect_node(state: dict) -> dict:
           "messages": [...]   # 仅当 fail 时追加 critique AIMessage
         }
     """
-    # 0. 拿 LLM（测试里会 mock 成 MockLLM）
-    llm = _get_llm()
-
-    # 1. 拿 question 和 answer
-    messages_list = state["messages"]
-    question = messages_list[0].content
-    answer = messages_list[-1].content
-
-    # 2. 超限保护（双保险，与 should_continue 的 MAX_ITERS 兜底互补）
+    # 0. 超限保护（双保险）—— 必须在 LLM 初始化之前短路，避免浪费初始化与消息解析
     current_count = state.get("reflection_count", 0)
     if current_count >= MAX_REFL:
         # 强制通过，避免无限循环
@@ -104,6 +96,14 @@ def reflect_node(state: dict) -> dict:
             "reflection_count": 1,
             "last_reflection_pass": True,
         }
+
+    # 1. 拿 LLM（测试里会 mock 成 MockLLM）
+    llm = _get_llm()
+
+    # 2. 拿 question 和 answer
+    messages_list = state["messages"]
+    question = messages_list[0].content
+    answer = messages_list[-1].content
 
     # 3. 调 LLM 评判
     prompt_messages = [
