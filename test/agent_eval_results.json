@@ -1,0 +1,109 @@
+{
+  "summary": {
+    "total": 12,
+    "correct": 11,
+    "accuracy": 91.66666666666666,
+    "rag_correct": 4,
+    "rag_total": 5,
+    "chat_correct": 7,
+    "chat_total": 7
+  },
+  "details": [
+    {
+      "id": "T01",
+      "query": "你是谁",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>The user is asking \"你是谁\" (Who are you?). This is a simple greeting/introd..."
+    },
+    {
+      "id": "T02",
+      "query": "1+1等于多少",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>This is a simple math question, a general knowledge question. No need to ..."
+    },
+    {
+      "id": "T03",
+      "query": "你好",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>用户只是打了个招呼，没有涉及个人上下文或文档内容，直接回答即可。</think>\n\n你好！有什么我可以帮你的吗？"
+    },
+    {
+      "id": "T04",
+      "query": "在我的知识库里有什么内容",
+      "expected": "rag",
+      "actual": "rag",
+      "correct": true,
+      "response_preview": "<think>知识库里没有找到相关内容。我应该坦白告诉用户，不要瞎编。</think>\n\n我刚在您的知识库里检索了一下，目前**没有找到任何已上传的文档或笔记内..."
+    },
+    {
+      "id": "T05",
+      "query": "我之前上传的文档讲了什么",
+      "expected": "rag",
+      "actual": "rag",
+      "correct": true,
+      "response_preview": "<think>检索结果显示知识库中没有找到相关文档，说明用户之前没有上传过任何文档，或者文档不在我的检索范围内。我应该如实告知用户，不要瞎编。</think>\n..."
+    },
+    {
+      "id": "T06",
+      "query": "RAG 的核心定义是什么",
+      "expected": "rag",
+      "actual": "chat",
+      "correct": false,
+      "response_preview": "<think>The user is asking \"What is the core definition of RAG?\" This is a genera..."
+    },
+    {
+      "id": "T07",
+      "query": "Python 的 list 和 tuple 有什么区别",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>The user is asking a general programming question about the differences b..."
+    },
+    {
+      "id": "T08",
+      "query": "你了解我最近读的书吗",
+      "expected": "rag",
+      "actual": "rag",
+      "correct": true,
+      "response_preview": "<think>\nThe search returned no results. I should be honest with the user that I ..."
+    },
+    {
+      "id": "T09",
+      "query": "上海今天天气怎么样",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>The user asked about Shanghai's weather today. This is a general real-tim..."
+    },
+    {
+      "id": "T10",
+      "query": "介绍下 LangGraph",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>The user is asking about LangGraph, which is a general knowledge question..."
+    },
+    {
+      "id": "T11",
+      "query": "我的简历里有什么",
+      "expected": "rag",
+      "actual": "rag",
+      "correct": true,
+      "response_preview": "<think>检索结果显示知识库中没有找到相关文档。我应该坦白告诉用户，没有找到简历内容，不要瞎编。</think>\n\n你的知识库里目前没有找到简历相关的文档哦..."
+    },
+    {
+      "id": "T12",
+      "query": "解释下什么是 ReAct 模式",
+      "expected": "chat",
+      "actual": "chat",
+      "correct": true,
+      "response_preview": "<think>The user is asking about \"ReAct 模式\" (ReAct mode/pattern). According to my..."
+    }
+  ]
+}
