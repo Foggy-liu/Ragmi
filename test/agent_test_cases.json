@@ -1,0 +1,79 @@
+[
+  {
+    "id": "T01",
+    "query": "你是谁",
+    "expected_tool": "chat",
+    "category": "general",
+    "reference_keywords": ["AI", "助手"]
+  },
+  {
+    "id": "T02",
+    "query": "1+1等于多少",
+    "expected_tool": "chat",
+    "category": "general",
+    "reference_keywords": ["2"]
+  },
+  {
+    "id": "T03",
+    "query": "你好",
+    "expected_tool": "chat",
+    "category": "general",
+    "reference_keywords": ["你好"]
+  },
+  {
+    "id": "T04",
+    "query": "在我的知识库里有什么内容",
+    "expected_tool": "rag",
+    "category": "knowledge_lookup",
+    "note": "v1 失败 case，v2 必须选对"
+  },
+  {
+    "id": "T05",
+    "query": "我之前上传的文档讲了什么",
+    "expected_tool": "rag",
+    "category": "knowledge_lookup"
+  },
+  {
+    "id": "T06",
+    "query": "RAG 的核心定义是什么",
+    "expected_tool": "rag",
+    "category": "knowledge_lookup"
+  },
+  {
+    "id": "T07",
+    "query": "Python 的 list 和 tuple 有什么区别",
+    "expected_tool": "chat",
+    "category": "general"
+  },
+  {
+    "id": "T08",
+    "query": "你了解我最近读的书吗",
+    "expected_tool": "rag",
+    "category": "knowledge_lookup"
+  },
+  {
+    "id": "T09",
+    "query": "上海今天天气怎么样",
+    "expected_tool": "chat",
+    "category": "rag_empty",
+    "note": "没有天气工具，应该走 chat"
+  },
+  {
+    "id": "T10",
+    "query": "介绍下 LangGraph",
+    "expected_tool": "chat",
+    "category": "general"
+  },
+  {
+    "id": "T11",
+    "query": "我的简历里有什么",
+    "expected_tool": "rag",
+    "category": "knowledge_lookup"
+  },
+  {
+    "id": "T12",
+    "query": "解释下什么是 ReAct 模式",
+    "expected_tool": "chat",
+    "category": "general"
+  }
+]

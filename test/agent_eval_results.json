@@ -15,7 +15,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking \"你是谁\" (Who are you?). This is a simple greeting/introd..."
+      "response_preview": "<think>用户问\"你是谁\"，这是一个简单的闲聊/问候问题，根据规则，这种情况不需要调用 rag_search 工具，直接回答即可。</think>\n\n我是 ...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T02",
@@ -23,7 +25,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>This is a simple math question, a general knowledge question. No need to ..."
+      "response_preview": "<think>This is a simple math question, general knowledge. No need to call rag_se...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T03",
@@ -31,7 +35,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>用户只是打了个招呼，没有涉及个人上下文或文档内容，直接回答即可。</think>\n\n你好！有什么我可以帮你的吗？"
+      "response_preview": "<think>The user is just saying hello. According to the rules, for casual greetin...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T04",
@@ -39,7 +45,9 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>知识库里没有找到相关内容。我应该坦白告诉用户，不要瞎编。</think>\n\n我刚在您的知识库里检索了一下，目前**没有找到任何已上传的文档或笔记内..."
+      "response_preview": "<think>工具返回了知识库中的文档片段。我需要基于这些片段回答用户的问题，不能用通用知识补充。\n\n从返回的片段来看，知识库内容主要围绕一个 Agent/RA...",
+      "iterations": 2,
+      "reflection_count": 1
     },
     {
       "id": "T05",
@@ -47,7 +55,9 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>检索结果显示知识库中没有找到相关文档，说明用户之前没有上传过任何文档，或者文档不在我的检索范围内。我应该如实告知用户，不要瞎编。</think>\n..."
+      "response_preview": "<think>看起来用户的知识库里有 4 份文档，从检索到的片段可以大致拼凑出内容：\n\n1. 00 总览 - 4 份文档的导航\n2. 01 批判 v2 设计 -...",
+      "iterations": 2,
+      "reflection_count": 1
     },
     {
       "id": "T06",
@@ -55,7 +65,9 @@
       "expected": "rag",
       "actual": "chat",
       "correct": false,
-      "response_preview": "<think>The user is asking \"What is the core definition of RAG?\" This is a genera..."
+      "response_preview": "<think>用户问的是 RAG 的核心定义，这是一个通用概念/原理问题，不涉及个人上下文或上传文档。根据规则，不调用 rag_search，直接回答。</th...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T07",
@@ -63,7 +75,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking a general programming question about the differences b..."
+      "response_preview": "<think>The user is asking about the difference between Python's list and tuple. ...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T08",
@@ -71,7 +85,9 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>\nThe search returned no results. I should be honest with the user that I ..."
+      "response_preview": "<think>The user asked if I know what books they've recently been reading. The ra...",
+      "iterations": 2,
+      "reflection_count": 1
     },
     {
       "id": "T09",
@@ -79,7 +95,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user asked about Shanghai's weather today. This is a general real-tim..."
+      "response_preview": "<think>The user asked about Shanghai's weather today. The previous response corr...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T10",
@@ -87,7 +105,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking about LangGraph, which is a general knowledge question..."
+      "response_preview": "<think>The user is asking about LangGraph, which is a general concept/technology...",
+      "iterations": 1,
+      "reflection_count": 1
     },
     {
       "id": "T11",
@@ -95,7 +115,9 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>检索结果显示知识库中没有找到相关文档。我应该坦白告诉用户，没有找到简历内容，不要瞎编。</think>\n\n你的知识库里目前没有找到简历相关的文档哦..."
+      "response_preview": "用户问的是\"我的简历里有什么\"，我反复用 rag_search 搜索，但**只搜到其他文档里关于简历的引用**（比如\"简历在 docs/personal/简历....",
+      "iterations": 5,
+      "reflection_count": 1
     },
     {
       "id": "T12",
@@ -103,7 +125,9 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking about \"ReAct 模式\" (ReAct mode/pattern). According to my..."
+      "response_preview": "<think>The user is asking about \"ReAct 模式\" (ReAct pattern/mode). This is a gener...",
+      "iterations": 1,
+      "reflection_count": 1
     }
   ]
 }
