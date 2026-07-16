@@ -59,3 +59,72 @@ def parse_reflection_json(text: str) -> dict:
 
     # 3. 终极 fail-safe
     return {"is_sufficient": False, "critique": "(反思输出解析失败, 默认重答)"}
+
+
+# ===== reflect_node =====
+
+_llm = None
+
+
+def _get_llm():
+    """懒加载反思 LLM（与 agent 同 MiniMax-M3, 30s 超时）。"""
+    global _llm
+    if _llm is None:
+        from utils.models.model_setting import LLMmodel
+
+        llm_instance = LLMmodel.create_minimax("MiniMax-M3")
+        _llm = llm_instance.chat.with_config({"timeout": 30})
+    return _llm
+
+
+def reflect_node(state: dict) -> dict:
+    """反思节点：评答案质量，决定走 END 还是回 agent 重答。
+
+    输入：state dict (含 messages, reflection_count)
+    输出：
+        {
+          "reflection_count": 1,
+          "last_reflection_pass": bool,
+          "messages": [...]   # 仅当 fail 时追加 critique AIMessage
+        }
+    """
+    # 0. 拿 LLM（测试里会 mock 成 MockLLM）
+    llm = _get_llm()
+
+    # 1. 拿 question 和 answer
+    messages_list = state["messages"]
+    question = messages_list[0].content
+    answer = messages_list[-1].content
+
+    # 2. 超限保护（双保险，与 should_continue 的 MAX_ITERS 兜底互补）
+    current_count = state.get("reflection_count", 0)
+    if current_count >= MAX_REFL:
+        # 强制通过，避免无限循环
+        return {
+            "reflection_count": 1,
+            "last_reflection_pass": True,
+        }
+
+    # 3. 调 LLM 评判
+    prompt_messages = [
+        SystemMessage(content=REFLECT_PROMPT),
+        HumanMessage(content=f"问题：{question}\n\n答案：{answer}"),
+    ]
+    response = llm.invoke(prompt_messages)
+
+    # 4. 解析 JSON
+    result = parse_reflection_json(response.content)
+    is_sufficient = bool(result.get("is_sufficient", False))
+    critique = result.get("critique", "")
+
+    # 5. 构造返回值
+    update = {
+        "reflection_count": 1,
+        "last_reflection_pass": is_sufficient,
+    }
+
+    # 6. 不通过且有 critique 时，追加 AIMessage 触发重答
+    if not is_sufficient and critique:
+        update["messages"] = [AIMessage(content=f"反思意见：{critique}")]
+
+    return update
