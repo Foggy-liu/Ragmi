@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agent.nodes.reflect import parse_reflection_json  # 这一步会失败, 因为还没实现
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 def test_valid_json_passes():
@@ -57,6 +58,125 @@ def test_is_sufficient_string_false():
     assert result["is_sufficient"] is False
 
 
+# ===== reflect_node 测试（mock LLM） =====
+
+class MockLLM:
+    """模拟 LLM，固定返回指定内容。"""
+
+    def __init__(self, response_text: str):
+        self.response_text = response_text
+        self.invoke_calls = []
+
+    def invoke(self, messages):
+        self.invoke_calls.append(messages)
+        return _MockAIMessage(self.response_text)
+
+
+class _MockAIMessage:
+    def __init__(self, content):
+        self.content = content
+
+
+def _make_state(messages: list, reflection_count: int = 0) -> dict:
+    """构造最小可用 state。"""
+    return {
+        "messages": messages,
+        "reflection_count": reflection_count,
+        "iterations": 1,
+    }
+
+
+def test_reflect_node_passes_when_sufficient(monkeypatch=None):
+    """LLM 判 sufficient 时, last_reflection_pass=True, 不追加 critique AIMessage。"""
+    from agent.nodes import reflect as reflect_mod
+
+    mock = MockLLM('{"is_sufficient": true, "critique": ""}')
+    reflect_mod._llm = mock  # 替换单例
+
+    state = _make_state(
+        [
+            HumanMessage(content="什么是 ReAct 模式？"),
+            AIMessage(content="ReAct 是一种推理+行动的模式..."),
+        ]
+    )
+
+    result = reflect_mod.reflect_node(state)
+
+    assert result["last_reflection_pass"] is True
+    assert result["reflection_count"] == 1
+    # 不追加 critique AIMessage
+    assert "messages" not in result or len(result.get("messages", [])) == 0
+    print("  ✓ test_reflect_node_passes_when_sufficient")
+
+
+def test_reflect_node_fails_appends_critique():
+    """LLM 判 insufficient 时, 追加 critique AIMessage, last_reflection_pass=False。"""
+    from agent.nodes import reflect as reflect_mod
+
+    mock = MockLLM('{"is_sufficient": false, "critique": "信息不全, 应提到 A 和 B"}')
+    reflect_mod._llm = mock
+
+    state = _make_state(
+        [
+            HumanMessage(content="list 和 tuple 的区别？"),
+            AIMessage(content="list 是可变序列。"),  # 不全
+        ]
+    )
+
+    result = reflect_mod.reflect_node(state)
+
+    assert result["last_reflection_pass"] is False
+    assert result["reflection_count"] == 1
+    # 追加 critique AIMessage
+    assert len(result.get("messages", [])) == 1
+    assert isinstance(result["messages"][0], AIMessage)
+    assert "信息不全" in result["messages"][0].content
+    print("  ✓ test_reflect_node_fails_appends_critique")
+
+
+def test_reflect_node_force_pass_when_max_reached():
+    """reflection_count >= MAX_REFL 时强制 pass (兜底)。"""
+    from agent.nodes import reflect as reflect_mod
+
+    mock = MockLLM('{"is_sufficient": false, "critique": "再反思"}')
+    reflect_mod._llm = mock
+
+    state = _make_state(
+        [
+            HumanMessage(content="q"),
+            AIMessage(content="a"),
+        ],
+        reflection_count=1,  # 等于 MAX_REFL
+    )
+
+    result = reflect_mod.reflect_node(state)
+
+    # 即使 LLM 说不通过, MAX_REFL 兜底强制 pass
+    assert result["last_reflection_pass"] is True
+    print("  ✓ test_reflect_node_force_pass_when_max_reached")
+
+
+def test_reflect_node_handles_garbage_output():
+    """LLM 返回乱码时, 触发 fail-safe 默认 insufficient。"""
+    from agent.nodes import reflect as reflect_mod
+
+    mock = MockLLM("我无法评判")  # 完全无法解析
+    reflect_mod._llm = mock
+
+    state = _make_state(
+        [
+            HumanMessage(content="q"),
+            AIMessage(content="a"),
+        ]
+    )
+
+    result = reflect_mod.reflect_node(state)
+
+    assert result["last_reflection_pass"] is False
+    assert "messages" in result and len(result["messages"]) == 1
+    print("  ✓ test_reflect_node_handles_garbage_output")
+
+
 def main():
     tests = [
         test_valid_json_passes,
@@ -64,7 +184,11 @@ def main():
         test_garbage_falls_back_to_insufficient,
         test_partial_json_falls_back,
         test_missing_is_sufficient_defaults_to_false,
-        test_is_sufficient_string_false,
+        test_is_sufficient_string_false,  # T4 fix added this
+        test_reflect_node_passes_when_sufficient,
+        test_reflect_node_fails_appends_critique,
+        test_reflect_node_force_pass_when_max_reached,
+        test_reflect_node_handles_garbage_output,
     ]
     passed = 0
     failed = 0
