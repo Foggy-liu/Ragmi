@@ -50,6 +50,13 @@ def test_missing_is_sufficient_defaults_to_false():
     assert result["is_sufficient"] is False
 
 
+def test_is_sufficient_string_false():
+    """LLM 偶尔返回字符串 'false' 而非 JSON false, 应正确解析为 False。"""
+    text = '{"is_sufficient": "false", "critique": ""}'
+    result = parse_reflection_json(text)
+    assert result["is_sufficient"] is False
+
+
 def main():
     tests = [
         test_valid_json_passes,
@@ -57,6 +64,7 @@ def main():
         test_garbage_falls_back_to_insufficient,
         test_partial_json_falls_back,
         test_missing_is_sufficient_defaults_to_false,
+        test_is_sufficient_string_false,
     ]
     passed = 0
     failed = 0

@@ -15,6 +15,15 @@ from agent.prompts.reflect_prompt import REFLECT_PROMPT
 from agent.state import MAX_REFL
 
 
+def _to_bool(v) -> bool:
+    """安全布尔转换：处理 LLM 返回字符串 'false' 而非 JSON false 的情况。"""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes")
+    return bool(v)
+
+
 def parse_reflection_json(text: str) -> dict:
     """解析反思节点的 JSON 输出。失败时 fail-safe 默认 insufficient。
 
@@ -28,10 +37,11 @@ def parse_reflection_json(text: str) -> dict:
         result = json.loads(text)
         if "is_sufficient" in result:
             return {
-                "is_sufficient": bool(result["is_sufficient"]),
+                "is_sufficient": _to_bool(result["is_sufficient"]),
                 "critique": str(result.get("critique", "")),
             }
-    except Exception:
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # JSON 解析失败是预期内的边界情况，继续尝试正则 fallback
         pass
 
     # 2. 正则 fallback
@@ -40,10 +50,11 @@ def parse_reflection_json(text: str) -> dict:
         try:
             result = json.loads(m.group())
             return {
-                "is_sufficient": bool(result.get("is_sufficient", False)),
+                "is_sufficient": _to_bool(result.get("is_sufficient", False)),
                 "critique": str(result.get("critique", "")),
             }
-        except Exception:
+        except (json.JSONDecodeError, ValueError, TypeError):
+            # 正则提取的子串仍无法解析，继续尝试终极 fail-safe
             pass
 
     # 3. 终极 fail-safe
