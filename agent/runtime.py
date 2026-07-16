@@ -48,7 +48,11 @@ def _error_response(debug: bool):
     }
 
 
-def ask(question: str, session_id=None, debug: bool = False):
+def ask(
+    question: str,
+    session_id: str | None = None,
+    debug: bool = False,
+) -> str | dict:
     """统一对话入口。
 
     输入：
