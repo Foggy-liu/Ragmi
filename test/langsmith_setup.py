@@ -8,7 +8,11 @@
 import json
 from pathlib import Path
 
+from dotenv import load_dotenv
 from langsmith import Client
+
+# 自动从 worktree 根目录的 .env 加载 LANGSMITH_API_KEY
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 def main():
