@@ -110,18 +110,27 @@ api_file.py ──┘                  ↑
 ## 数据流：上传 → 检索
 
 ```
-1. 用户在 RAG 页面点击上传文件
+1. 用户在"仓库管理"页面点击上传文件
 2. Streamlit → POST /api/upload-and-parse (multipart)
 3. api_file.py:
-   a. 校验文件名（拒绝 ../ 等路径穿越字符）
-   b. 校验 resolve() 后的路径在 UPLOAD_DIR 内
-   c. 保存到 UPLOAD_DIR/<safe_filename>
-   d. 调 parse_and_chunk() → 切分文本
-   e. 调 ingest_to_milvus(chunks) → 写入 alias "langchain"
+   a. 校验文件扩展名（仅接受 .pdf / .docx / .md / .txt）
+   b. 校验文件名（拒绝 ../ 等路径穿越字符）
+   c. 校验 resolve() 后的路径在 UPLOAD_DIR 内
+   d. 保存到 UPLOAD_DIR/<safe_filename>
+   e. 调 parse_and_chunk() → 切分文本
+   f. 调 ingest_to_milvus(chunks) → 写入 alias "langchain"
 4. 用户问问题
 5. Agent / RAG → Milvus search via alias "langchain"
 6. 检索结果 + LLM 生成答案
 ```
+
+**当前支持的文件类型**（白名单）：
+- `.pdf` — PDF 文档
+- `.docx` — Word 文档
+- `.md` — Markdown
+- `.txt` — 纯文本
+
+未来扩展（v2.2+）：`.csv` / `.xlsx` / `.html` / `.pptx`。本轮不实现。
 
 ## 数据流：Milvus 重建（alias swap）
 
@@ -157,13 +166,13 @@ api_file.py ──┘                  ↑
 | 文件 | 改动 |
 |------|------|
 | `main.py` | 挂载 `api_file.router`（`prefix="/api"`）；加 lifespan hook 校验 UPLOAD_DIR、Milvus 探活 |
-| `api/api_file.py` | 路径穿越校验（`Path.resolve().is_relative_to(UPLOAD_DIR)`），失败返回 400 |
+| `api/api_file.py` | 路径穿越校验（`Path.resolve().is_relative_to(UPLOAD_DIR)`），失败返回 400；强制文件类型白名单：`.pdf` / `.docx` / `.md` / `.txt` |
 | `utils/models/embedding_model.py` | 改读 `embed_config["vector_store"]["milvus"]`，缺字段 fail-loud |
 | `core/rags/rags.py` | 删硬编码 fallback，配置缺失 `raise ConfigError` |
 | `utils/txt_spliter/vector_main.py` | 改用 alias swap 重建，保留 7 天回滚窗口 |
-| `web_page/knowledge_base.py` | 删除 |
+| `web_page/knowledge_base.py` | 改名 `web_page/repo_admin.py`，作为"仓库管理"页面入口 |
 | `web_page/mcp_page.py` | 删除 |
-| `main_web.py` | 侧边栏保留两个页面：Agent 问答（默认）、RAG 问答（直连 `/rag`） |
+| `main_web.py` | 侧边栏保留三个页面：① Agent 问答（默认）② RAG 问答（直连 `/rag`）③ 仓库管理配置（上传文件、查看已上传文件列表，后续扩展管理功能） |
 
 ### M3 改动
 
@@ -185,7 +194,9 @@ api_file.py ──┘                  ↑
 | `README.md` | 加 "快速启动（Docker）"、"手动启动"、"跑测试" 三个 section |
 | `docs/STATUS.md` | 移到 `docs/archive/2026-07-08-pre-v2.1.md`，加 "已冻结，仅供考古" 顶部注释 |
 | `agent_demo/` | 不上传到 git（不进 git history） |
-| `.gitignore` | 加 `agent_demo/`、`txt/.file_filter.json`、`documents/.tmp/`、`.pytest_cache/` |
+| `.gitignore` | ① 加 `agent_demo/` ② `txt/` 内容忽略但保留空目录（`.gitkeep`） ③ `documents/` 内容忽略但保留空目录（`.gitkeep`） ④ 加 `documents/.tmp/` ⑤ 加 `.pytest_cache/` |
+| `documents/.gitkeep` | 新建（空目录占位） |
+| `txt/.gitkeep` | 新建（空目录占位） |
 | `utils/logging.py` | 新建，统一 `logging.basicConfig` 格式（时间、级别、模块、消息） |
 | `agent/runtime.py` / `agent/nodes/*.py` / `core/rags/rags.py` | 核心调度路径 `print()` 换 `logger.info()`；`agent_demo/`、`examples/`、`scripts/`、`if __name__ == "__main__"` 下的调试 print 保留 |
 
@@ -302,6 +313,23 @@ test-eval:
 - **缓解**：仅改架构章节（第 28-86 行），其他章节保留
 
 ## 后续（不在本轮范围）
+
+### 仓库管理配置（第三页面）的演进路线
+
+当前 M2 只实现"上传文件"这一最小闭环。后续"仓库管理配置"页面的演进路径：
+
+| 阶段 | 功能 | 触发条件 |
+|------|------|----------|
+| **R0：上传（当前 M2）** | 上传文件 → 入库 | 完成 |
+| **R1：文件清单** | 列出 documents/ 内所有文件 + 入库状态 + chunk 数 + 删除按钮 | R0 稳定运行后 |
+| **R2：单文件重建** | 选中文件 → 重新切分 → 重新入库；alias swap 仍生效 | R1 上线后 |
+| **R3：多知识库** | 支持多个 collection（如"技术文档"/"个人笔记"），下拉切换 | R2 上线后 |
+| **R4：自动同步** | 监听 documents/ 文件系统变化（watchdog），自动入库/删除 | R3 上线后 |
+| **R5：可视化** | 向量空间可视化（t-SNE / UMAP）；chunk 命中率统计 | R4 上线后 |
+
+**R0 已在本轮范围**。R1-R5 不在，需要时单独开 spec。
+
+### 其他远期项目
 
 - M5: 真实 LangSmith 评估（当前已集成但未跑）
 - M6: MCP 工具接入
