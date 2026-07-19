@@ -155,7 +155,7 @@ api_file.py ──┘                  ↑
 | 文件 | 改动 |
 |------|------|
 | `requirements.txt` | 锁死依赖版本（具体版本号在 M1 实施第一步通过 `pip freeze > requirements.lock` 生成，从 lock 提取主依赖填入 `requirements.txt`） |
-| `requirements-dev.txt` | 新建：pytest / pytest-asyncio / pytest-cov / requests |
+| `requirements-dev.txt` | 新建：精简为 `pytest>=8.0` + `pytest-cov>=5.0`（YAGNI：当前无 async 测试、无 HTTP 测试，pytest-asyncio / requests 未来再加） |
 | `Dockerfile` | CMD 改为 `uvicorn main:app --host 0.0.0.0 --port 8000` |
 | `docker-compose.yml` | 3 个 service：milvus、api、web；Ollama 用 `host.docker.internal:11434`（跨平台不处理，Linux 跑不起来是已知限制） |
 | `docker-compose-milvus.yml` / `docker-compose-offline.yml` / `compose.yaml` | 删除 |
