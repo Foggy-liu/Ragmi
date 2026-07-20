@@ -1,5 +1,6 @@
 # Core API
 fastapi==0.127.1
+# Downgrade from ~=2.12.5 due to dependency conflict — verify FastAPI compat
 pydantic==2.12.4
 uvicorn==0.40.0
 
@@ -19,12 +20,14 @@ langsmith==0.5.1
 
 # Document parsing
 python-docx==1.2.0
+# Unpinned: platform-specific builds or transitive deps. Pin later if needed.
 pymupdf
 pytesseract
 
 # Utilities
 python-dotenv==1.2.1
 pyyaml==6.0.3
+# Unpinned: platform-specific builds or transitive deps. Pin later if needed.
 numpy
 pillow
 markdown
@@ -32,3 +35,4 @@ beautifulsoup4
 opencv-python
 typing==3.7.4.3
 requests==2.32.5
+
