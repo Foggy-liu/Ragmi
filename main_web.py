@@ -1,51 +1,43 @@
-"""
-UI界面主文件入口，左侧边栏设置
-"""
+"""main_web.py —— Streamlit 入口，三页面布局。
 
-# 导入streamlit库，用于构建Web界面
+1. Agent 智能问答（默认）—— 走 /agent/chat
+2. RAG 知识库问答 —— 直连 /rag，进阶证明
+3. 仓库管理配置 —— 上传文件、查看状态（R0 仅上传）
+"""
 import streamlit as st
-# 导入streamlit_antd_components库，用于构建UI组件
 import streamlit_antd_components as sac
-# 导入知识库管理页面
-from web_page.knowledge_base import knowledge_base_page
-# 导入MCP管理页面
-from web_page.mcp import mcp_page
+
 from web_page.rag_page import rag_page
+from web_page.rag_direct_page import rag_direct_page
+from web_page.repo_admin import repo_admin_page
 
-if __name__ == '__main__':
-    # 设置页面配置：标题为"LangChain-Chatchat"，布局为居中模式（实现 Streamlit 中聊天区域固定长度不随侧边栏伸缩变化）
-    st.set_page_config(page_title="LangChain-Chatchat", layout="centered")
+st.set_page_config(page_title="RAGMI", layout="centered")
 
-    st.markdown("""
+st.markdown(
+    """
     <style>
     section[data-testid="stSidebar"] {
         width: 300px !important;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
+with st.sidebar:
+    selected_page = sac.menu(
+        [
+            sac.MenuItem("智能问答", icon="chat"),
+            sac.MenuItem("知识库问答", icon="book"),
+            sac.MenuItem("仓库管理配置", icon="hdd-stack"),
+        ],
+        key="selected_page",
+        open_index=0,
+    )
 
-    # 创建左侧边栏容器
-    with st.sidebar:
-
-        # 创建单选按钮组，用于切换不同功能模块
-        # "智能问答" - Agent统一入口，自动判断RAG/Chat
-        # "知识库管理" - 文档上传和管理
-        # "MCP 管理" - MCP连接器管理
-        selected_page = sac.menu(
-            [
-                sac.MenuItem("智能问答", icon="chat"),
-                sac.MenuItem("知识库管理", icon="hdd-stack"),
-                sac.MenuItem("MCP 管理", icon="plug"),
-            ],
-            key="selected_page",
-            open_index=0,
-        )
-
-    # 根据用户选择，显示对应的功能模块
-    if selected_page == "知识库管理":
-        knowledge_base_page()
-    elif selected_page == "MCP 管理":
-        mcp_page()
-    else:
-        rag_page()  # 智能问答（唯一对话入口）
+if selected_page == "知识库问答":
+    rag_direct_page()
+elif selected_page == "仓库管理配置":
+    repo_admin_page()
+else:
+    rag_page()  # Agent 智能问答（默认）
