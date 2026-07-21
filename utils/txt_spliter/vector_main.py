@@ -4,6 +4,7 @@ from utils.models.embedding_model import EmbeddingModel
 from utils.txt_spliter import spliter
 from dotenv import load_dotenv
 import os
+import time
 
 
 def vector_split():
@@ -11,7 +12,7 @@ def vector_split():
     embed_model = EmbeddingModel.create_default()
 
     # 2、初始化切分器
-    splitter = spliter.Splitter()
+    splitter = spliter.Spliter()
 
     # 3、切分文件（处理 txt/ 目录下所有文件）
     documents = splitter.split_all_files()
@@ -29,12 +30,10 @@ def vector_split():
     # 6、连接 Milvus
     client = MilvusClient(uri=f"http://{milvus_config.get('host', '127.0.0.1')}:{milvus_config.get('port', '19530')}")
 
-    collection_name = milvus_config.get('collection_name', 'txt_data')
+    alias_name = milvus_config.get('collection_name', 'txt_data')  # alias 名称固定为配置中的 collection_name
+    new_collection_name = f"{alias_name}_{int(time.time())}"  # 实际集合名带时间戳
 
-    # 7、如果集合已存在则删除（重建）
-    if client.has_collection(collection_name):
-        client.drop_collection(collection_name)
-        print(f"已删除旧集合: {collection_name}")
+    print(f"将创建新集合: {new_collection_name}，alias '{alias_name}' 将指向新集合")
 
     # 8、获取一个 embedding 来确定维度
     sample_text = documents[0].page_content
@@ -48,9 +47,9 @@ def vector_split():
     schema.add_field(field_name='vector', datatype=DataType.FLOAT_VECTOR, dim=dim)
     schema.add_field(field_name='text', datatype=DataType.VARCHAR, max_length=65535)
 
-    # 10、创建 collection
-    client.create_collection(collection_name=collection_name, schema=schema)
-    print(f"创建集合: {collection_name}")
+    # 10、创建新集合（实际名带时间戳，不是 alias 名）
+    client.create_collection(collection_name=new_collection_name, schema=schema)
+    print(f"创建新集合: {new_collection_name}")
 
     # 11、为每个文档生成 embedding 并插入
     all_texts = [doc.page_content for doc in documents]
@@ -70,7 +69,7 @@ def vector_split():
 
         entities = [{'vector': batch_vectors[j], 'text': batch_texts[j]} for j in range(len(batch_texts))]
 
-        result = client.insert(collection_name=collection_name, data=entities)
+        result = client.insert(collection_name=new_collection_name, data=entities)
         total_inserted += result['insert_count']
         print(f"已插入 {total_inserted}/{len(documents)} 个片段")
 
@@ -79,14 +78,32 @@ def vector_split():
     # 13、创建索引
     print("正在创建索引...")
     index_params = client.prepare_index_params(field_name='vector', index_type='AUTOINDEX', metric_type='COSINE')
-    client.create_index(collection_name=collection_name, index_params=index_params)
+    client.create_index(collection_name=new_collection_name, index_params=index_params)
 
     # 14、加载 collection
     print("正在加载集合...")
-    client.load_collection(collection_name=collection_name)
+    client.load_collection(collection_name=new_collection_name)
+
+    # 15、原子切换 alias（核心：旧集合不删，新集合接替）
+    try:
+        # 检查 alias 是否已存在
+        client.describe_alias(alias_name)
+        alias_exists = True
+    except Exception:
+        alias_exists = False
+
+    if alias_exists:
+        # 已有 alias：用 alter_alias 原子切换（旧集合保留，回滚窗口由人工清理）
+        client.alter_alias(new_collection_name, alias_name)
+        print(f"已原子切换 alias '{alias_name}' -> 新集合 '{new_collection_name}'")
+        print(f"旧集合（如有）保留 7 天，可在 Milvus 控制台手动删除")
+    else:
+        # 首次：直接创建 alias
+        client.create_alias(new_collection_name, alias_name)
+        print(f"已创建 alias '{alias_name}' -> 新集合 '{new_collection_name}'")
 
     print(f"Milvus 向量库创建成功！")
-    print(f"集合名称: {collection_name}")
+    print(f"Alias 名称: {alias_name} (指向 {new_collection_name})")
     print(f"文档片段数: {total_inserted}")
 
     return client
