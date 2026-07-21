@@ -37,7 +37,8 @@
     "id": "T06",
     "query": "RAG 的核心定义是什么",
     "expected_tool": "rag",
-    "category": "knowledge_lookup"
+    "category": "knowledge_lookup",
+    "note": "RAG 定义在 01_RAG_intro.md 里，rag 正确。修复计划中曾建议改为 chat，但基于过期 T06 文本（'ReAct 模式'），实际当前 T06 不是通用概念。"
   },
   {
     "id": "T07",
