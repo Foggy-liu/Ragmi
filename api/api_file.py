@@ -22,7 +22,7 @@ input_dir.mkdir(exist_ok=True)
 output_dir.mkdir(exist_ok=True)
 
 # 支持的文件类型（与txt_main的Scanner一致）
-SUPPORTED_FILE_TYPES = {".txt", ".md", ".docx", ".doc", ".pdf"}
+SUPPORTED_FILE_TYPES = {".txt", ".md", ".docx", ".pdf"}
 
 # ------------------- 批量上传+触发解析API -------------------
 @app.post("/batch-upload-and-parse", summary="批量上传文件并触发txt_main完整处理流程")
@@ -45,6 +45,23 @@ async def batch_upload_and_parse(
         file_suffix = Path(file.filename).suffix.lower()
         save_filename = file.filename  # 直接用原文件名保存
         save_path = input_dir / save_filename
+
+        # 路径穿越校验：resolve() 后必须在 input_dir 内
+        try:
+            resolved = (input_dir / save_filename).resolve()
+            input_dir_resolved = input_dir.resolve()
+            if not str(resolved).startswith(str(input_dir_resolved)):
+                failed_uploads.append({
+                    "filename": file.filename,
+                    "reason": "文件名包含非法路径字符"
+                })
+                continue
+        except Exception:
+            failed_uploads.append({
+                "filename": file.filename,
+                "reason": "路径解析失败"
+            })
+            continue
 
         # 校验文件类型
         if file_suffix not in SUPPORTED_FILE_TYPES:
