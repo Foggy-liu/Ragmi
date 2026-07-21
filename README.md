@@ -248,6 +248,32 @@ PYTHONIOENCODING=utf-8 python test/langsmith_eval.py --prefix v2.1-reflection
 
 ---
 
+## 运行测试
+
+项目用 pytest + 自研 eval 脚本 + Makefile 入口管理测试：
+
+```bash
+# 单元测试 + mock 评估（不需要真实 LLM key）
+make test
+
+# 或分别跑
+make test-unit      # 10 个 parse_reflection_json + reflect_node 用例
+make test-mock      # 12 个 agent 用例，reflect 用 MockLLM，agent 仍用真实 LLM
+make test-eval      # 真实 LLM 全量评估（需要 .env 配 API key）
+make clean          # 清 __pycache__ + .pytest_cache
+```
+
+测试入口：
+
+- `pytest test/test_reflect.py -v` — 纯逻辑单元（10 用例，< 2 秒）
+- `python test/test_reflection_count.py` — MAX_REFL=1 边界行为（2 场景）
+- `python test/run_agent_eval.py [--mock]` — agent 路由评估，输出 `test/agent_eval_results.json`
+
+当前 mock 模式基线：**11/12 = 91.7% routing accuracy, 12/12 = 100% stability**
+（T06 "RAG 的核心定义" 唯一错例，真实 LLM 判为通用概念问答而非"查我文档"）
+
+---
+
 ## 后续规划
 
 - [x] Milvus 向量库替换 ChromaDB
