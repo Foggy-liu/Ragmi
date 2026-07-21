@@ -1,15 +1,48 @@
-from fastapi import FastAPI,Request
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from uvicorn import run
 
 from utils.models.model_manager import ModelManager
 from utils.models.model_setting import LLMmodel
+from utils.logging import setup_logging
 
 from api.api_chat import appchat
 from api.api_model import appmodel
 from api.api_rag import apprag
 from api.api_agent import appagent
+from api.api_file import app as appfile
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动期校验：UPLOAD_DIR 可写、Milvus 探活。"""
+    setup_logging("INFO")
+
+    upload_dir = Path("documents").resolve()
+    if not upload_dir.exists():
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[lifespan] 创建上传目录: {upload_dir}")
+    if not upload_dir.is_dir():
+        raise RuntimeError(f"上传目录不可写: {upload_dir}")
+
+    # Milvus 探活（不阻塞启动）
+    try:
+        from pymilvus import MilvusClient
+        from utils.models.embedding_model import EmbeddingModel
+        embed = EmbeddingModel.create_default()
+        milvus_cfg = embed.get_milvus_config()
+        client = MilvusClient(host=milvus_cfg["host"], port=milvus_cfg["port"])
+        client.list_collections()
+        print(f"[lifespan] Milvus 探活成功: {milvus_cfg['host']}:{milvus_cfg['port']}")
+    except Exception as e:
+        print(f"[lifespan] Milvus 探活失败（不阻塞启动）: {e}")
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 创建管理器
 model_manager = ModelManager()
@@ -22,10 +55,11 @@ model_manager.set_current_model(default_model)  # 只是调用方法，不赋值
 # 存入全局状态
 app.state.model_manager = model_manager
 
-app.include_router(appchat,tags=["chat"])
-app.include_router(appmodel,tags=["model"])
-app.include_router(apprag,tags=["rag"])
+app.include_router(appchat, tags=["chat"])
+app.include_router(appmodel, tags=["model"])
+app.include_router(apprag, tags=["rag"])
 app.include_router(appagent, tags=["agent"])
+app.mount("/api", appfile, name="file")
 
 
 @app.get("/debug/simple")
