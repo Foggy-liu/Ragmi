@@ -8,6 +8,9 @@ v2.1 增强：
 """
 
 from agent.graph import build_graph
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 _graph = None
@@ -67,13 +70,15 @@ def ask(
     graph = _get_graph()
     config = {"configurable": {"thread_id": session_id}} if session_id else None
 
+    logger.info(f"ask() entry: query={question[:50]}... session={session_id}")
+
     try:
         result = graph.invoke(
             {"messages": [("user", question)]},
             config=config,
         )
     except Exception as e:
-        print(f"[agent error] {type(e).__name__}: {e}")
+        logger.exception(f"ask() failed: {type(e).__name__}: {e}")
         return _error_response(debug)
 
     answer = result["messages"][-1].content
