@@ -25,78 +25,84 @@ streamlit run main_web.py
 curl http://localhost:8000/debug/simple
 ```
 
-## Architecture
+## Architecture (v2.1 LangGraph)
 
 ### Layered Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
 │  Streamlit Frontend (main_web.py)           │
-│  - Single chat interface (智能问答)           │
-│  - Knowledge base management                  │
+│  - Page 1: Agent 智能问答（默认）             │
+│  - Page 2: RAG 知识库问答（直连 /rag）        │
+│  - Page 3: 仓库管理配置（上传文件）            │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│  FastAPI Backend (main.py, port 8000)       │
-│  - /agent/chat - ReAct Agent endpoint       │
-│  - /rag - Direct RAG endpoint                │
-│  - /chat - Direct chat endpoint              │
+│  FastAPI Backend (main:app, port 8000)      │
+│  - /agent/chat  - ReAct + Reflection        │
+│  - /rag         - Direct RAG                │
+│  - /chat        - Direct LLM                │
+│  - /api/upload-and-parse - 文件上传          │
+│  - /debug/simple - 后端存活探测              │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│  Agent Layer (agent/)                       │
-│  - AgentController: ReAct loop + orchestration│
-│  - BaseTool: Abstract tool interface         │
-│  - RagTool / ChatTool: Tool implementations │
-│  - core/: reasoning, strategy, evaluation   │
+│  Agent Layer (agent/, LangGraph v2.1)       │
+│  - graph.py: StateGraph (3 nodes)           │
+│  - nodes/: agent / tools / reflect           │
+│  - state.py: MAX_ITERS=5, MAX_REFL=1         │
+│  - runtime.py: ask() 统一入口                │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│  Core Layer (core/)                         │
-│  - RagModel: RAG pipeline                  │
-│  - ChatModel: Direct chat                  │
+│  Core Layer                                 │
+│  - core/rags/rags.py: RAG pipeline           │
+│  - utils/models/embedding_model.py           │
+│  - utils/txt_spliter/vector_main.py          │
+│    (alias swap for safe rebuild)             │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
 │  Data Layer                                 │
-│  - Milvus: Vector storage                  │
-│  - MessageManager: Session history         │
+│  - Milvus (alias "langchain" → active coll)  │
+│  - MessageManager: 会话历史                  │
 └─────────────────────────────────────────────┘
 ```
 
-### Agent Architecture (agent/)
+### ReAct Agent Pattern (v2.1)
 
 ```
-agent/
-├── controller.py          # 编排层：协调 core 和 tools，执行 ReAct 循环
-├── core/                  # Agent 核心业务逻辑
-│   ├── reasoning.py       # 推理状态管理、LLM 输出解析（JSON + 正则 fallback）
-│   ├── strategy.py        # 工具调度、超时控制、重试、Fallback 降级
-│   └── evaluation.py      # 结果质量评估、Self-Correction
-├── tools/                # 工具实现
-│   ├── rag_tool.py        # RAG Tool (Milvus retrieval + LLM)
-│   └── chat_tool.py       # Chat Tool (direct LLM)
-├── base/
-│   └── tool.py           # BaseTool 抽象基类
-└── react_prompt.py       # ReAct 提示词（含 JSON 版本）
+agent → {tools, reflect, END}
+  ↓
+tools → agent   (ReAct 循环)
+  ↓
+reflect → {agent, END}   (Self-Reflection)
 ```
+
+Tool selection：LLM 输出 JSON `{tool, confidence, reasoning}`，
+`parse_tool_choice_json()` 解析，confidence < 0.5 fallback 到 chat。
+
+Self-correction (v2.1)：reflect_node 用 LLM-as-judge 评答案质量，
+不充分则追加 critique AIMessage 回 agent 重答，最多 MAX_REFL=1 次。
 
 ### Key Modules
 
 | Module | Purpose |
 |--------|---------|
-| `agent/controller.py` | ReAct 循环入口，协调 reasoning/strategy/evaluation |
-| `agent/core/reasoning.py` | 解析 LLM 输出，JSON 优先 + 正则 fallback |
-| `agent/core/strategy.py` | 超时控制(30s)、重试机制、Fallback 降级 |
-| `agent/core/evaluation.py` | 结果质量评估，触发 Self-Correction |
-| `agent/tools/rag_tool.py` | RAG as a Tool (Milvus retrieval + LLM) |
-| `agent/tools/chat_tool.py` | Chat as a Tool (direct LLM) |
-| `core/rags/rags.py` | RAG pipeline: embed → search → generate |
-| `utils/models/model_setting.py` | LLM wrapper (ChatOpenAI), supports multiple platforms |
+| `agent/graph.py` | LangGraph StateGraph (3 节点：agent/tools/reflect) |
+| `agent/state.py` | AgentState TypedDict, MAX_ITERS=5, MAX_REFL=1 |
+| `agent/runtime.py` | ask() 统一入口，含异常兜底 + debug metadata |
+| `agent/nodes/agent.py` | LLM 决策节点（bind_tools([rag_search])） |
+| `agent/nodes/reflect.py` | Self-reflection，LLM-as-judge + 兜底强制 pass |
+| `agent/nodes/should_continue.py` | 条件边路由（agent→tools/reflect/END） |
+| `agent/tools/rag_tool.py` | rag_search 工具实现（调 RagModel.retrieve） |
+| `core/rags/rags.py` | RAG pipeline：embed → search → generate |
+| `utils/models/model_setting.py` | LLM wrapper (ChatOpenAI), 多平台支持 |
+| `utils/txt_spliter/vector_main.py` | alias swap 安全重建（不丢旧数据） |
 
 ### Supported LLM Platforms
 
@@ -109,7 +115,9 @@ Configuration in `configs/model_config.yaml` and `.env`:
 
 - **Milvus** (via `pymilvus.MilvusClient`) with Docker volume persistence
 - **Embedding**: `bge-large` via Ollama (1024 dimensions)
-- Collection name configured in `configs/model_config.yaml` (default: `langchain`)
+- Collection alias configured in `configs/model_config.yaml` (default: `langchain`)
+- **Alias swap 模式**：`vector_main.py` 重建时建 `langchain_<ts>` 新集合，
+  原子切换 alias，老集合保留为 orphan 可清理
 
 ## ReAct Agent Pattern
 
