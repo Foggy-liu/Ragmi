@@ -87,9 +87,16 @@ class EmbeddingModel:
         return vector_config
 
     def get_milvus_config(self):
-        """获取 Milvus 连接配置"""
+        """获取 Milvus 连接配置（从 vector_store.milvus 读取，缺字段 fail-loud）。"""
         embed_config = self.yaml_config.get("EMBEDDING_CONFIG", {})
-        milvus_config = embed_config.get("milvus", {}).copy()
+        vector_store = embed_config.get("vector_store", {})
+        milvus_config = vector_store.get("milvus", {}).copy()
+
+        if not milvus_config:
+            raise ValueError(
+                "EMBEDDING_CONFIG.vector_store.milvus 配置缺失或为空，"
+                "请检查 configs/model_config.yaml"
+            )
 
         # 从环境变量替换占位符
         for k, v in milvus_config.items():
