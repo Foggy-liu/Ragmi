@@ -1,6 +1,13 @@
 """
 RAG 对话
 """
+
+
+class ConfigError(Exception):
+    """配置错误，启动期应 fail-fast。"""
+    pass
+
+
 from utils.message.message import MessageManager
 from typing import Dict, List, Optional
 from pymilvus import MilvusClient
@@ -38,13 +45,25 @@ class RagModel:
             # 3. 初始化 Ollama embedding
             self._embed = OllamaEmbeddings(model='bge-large', base_url='http://localhost:11434')
 
-            # 4. 连接到 Milvus
-            host = milvus_config.get('host', '127.0.0.1')
-            port = milvus_config.get('port', '19530')
+            # 4. 连接到 Milvus（缺字段立刻报错，不掩盖）
+            try:
+                host = milvus_config['host']
+                port = milvus_config['port']
+            except KeyError as e:
+                raise ConfigError(
+                    f"Milvus 配置缺失字段 {e}，请检查 configs/model_config.yaml 的 "
+                    "EMBEDDING_CONFIG.vector_store.milvus 节"
+                ) from e
             self._client = MilvusClient(uri=f"http://{host}:{port}")
 
-            # 5. 获取集合名称
-            self._collection_name = milvus_config.get('collection_name', 'txt_data')
+            # 5. 获取集合名称（缺字段立刻报错）
+            try:
+                self._collection_name = milvus_config['collection_name']
+            except KeyError as e:
+                raise ConfigError(
+                    f"Milvus 配置缺失 collection_name 字段，请检查 "
+                    "configs/model_config.yaml"
+                ) from e
 
             # 6. 检查集合是否存在
             if not self._client.has_collection(self._collection_name):
