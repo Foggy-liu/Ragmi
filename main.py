@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 
 from utils.models.model_manager import ModelManager
@@ -43,6 +44,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# 开发期 CORS：允许任意 origin（浏览器 dashboard 测试用）
+# 生产部署应改为白名单（前端域名）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 创建管理器
 model_manager = ModelManager()
