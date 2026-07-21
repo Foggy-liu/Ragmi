@@ -63,3 +63,6 @@ volumes/
 
 # Git worktree 本地工作区
 .worktrees/
+
+# Test fixtures (runtime test data)
+test/fixtures/

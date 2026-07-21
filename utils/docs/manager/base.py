@@ -22,14 +22,14 @@ class ProcessorManager:
                     # 根据文件类型调用对应的处理函数
                     success = self._process_single_file(file_path, output_path, file_type)
                     if success:
-                        print(f"✓ 已处理: {file_path.name} -> {output_path.name}")
+                        print(f"[OK] 已处理: {file_path.name} -> {output_path.name}")
                         results['processed'] += 1
                         self.file_mapping[str(file_path)] = str(output_path)  # 记录映射关系
                     else:
-                        print(f"✗ 处理失败: {file_path.name}")
+                        print(f"[FAIL] 处理失败: {file_path.name}")
                         results['failed'] += 1
                 except Exception as e:
-                    print(f"✗ 处理失败 {file_path.name}: {e}")
+                    print(f"[FAIL] 处理失败 {file_path.name}: {e}")
                     results['failed'] += 1
         return results, self.file_mapping  # 返回结果和映射
 

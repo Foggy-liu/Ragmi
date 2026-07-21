@@ -82,11 +82,11 @@ class SimpleWordProcessor:
                 with open(output_file_path, 'w', encoding='utf-8') as f:
                     f.write(plain_text)
 
-                print(f"✓ 已处理: {file_name} -> {output_file_path}")
+                print(f"[OK] 已处理: {file_name} -> {output_file_path}")
                 success_count += 1
 
             except Exception as e:
-                print(f"✗ 处理失败 {docx_file_path.name}: {e}")
+                print(f"[FAIL] 处理失败 {docx_file_path.name}: {e}")
 
         print(f"\n处理完成！成功处理 {success_count}/{len(docx_files)} 个文件")
 
