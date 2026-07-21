@@ -1,10 +1,41 @@
-from langchain_ollama import OllamaEmbeddings
 from pymilvus import MilvusClient, DataType
 from utils.models.embedding_model import EmbeddingModel
 from utils.txt_spliter import spliter
 from dotenv import load_dotenv
 import os
 import time
+import requests
+
+# 直连 Ollama HTTP API（不走 langchain_ollama 库 —— 该库在本机会被代理到错误端口）
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+EMBED_MODEL = os.environ.get("EMBEDDING_MODEL", "bge-large")
+EMBED_BATCH_SIZE = 32  # 单次 /api/embed 请求的文档上限
+
+
+def ollama_embed_texts(texts, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL, batch_size=EMBED_BATCH_SIZE):
+    """分批调用 Ollama /api/embed，返回 list[list[float]]。
+
+    为什么不用 langchain_ollama.OllamaEmbeddings：本机 ollama 库版本
+    在批量 embed 时会走一个 52266/53814 等高位随机端口 + /tokenize 端点，
+    那是某个 HTTP 代理/服务网格的拦截口而不是真正的 Ollama（11434）。
+    直连 11434 + /api/embed 才是规范的 Ollama HTTP API。
+    """
+    all_vectors = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        resp = requests.post(
+            f"{base_url}/api/embed",
+            json={"model": model, "input": batch},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        all_vectors.extend(resp.json()["embeddings"])
+    return all_vectors
+
+
+def ollama_embed_one(text, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL):
+    """单条文本 embed（用于探测维度）。"""
+    return ollama_embed_texts([text], model=model, base_url=base_url)[0]
 
 
 def vector_split():
@@ -12,7 +43,7 @@ def vector_split():
     embed_model = EmbeddingModel.create_default()
 
     # 2、初始化切分器
-    splitter = spliter.Spliter()
+    splitter = spliter.Splitter()
 
     # 3、切分文件（处理 txt/ 目录下所有文件）
     documents = splitter.split_all_files()
@@ -24,8 +55,7 @@ def vector_split():
     # 4、从配置文件中获取 Milvus 配置
     milvus_config = embed_model.get_milvus_config()
 
-    # 5、获取 embedding 函数（bge-large）
-    embed = OllamaEmbeddings(model='bge-large', base_url='http://localhost:11434')
+    # 5、（已移除 OllamaEmbeddings，改用 ollama_embed_one/ollama_embed_texts 直连 HTTP API）
 
     # 6、连接 Milvus
     client = MilvusClient(uri=f"http://{milvus_config.get('host', '127.0.0.1')}:{milvus_config.get('port', '19530')}")
@@ -37,7 +67,7 @@ def vector_split():
 
     # 8、获取一个 embedding 来确定维度
     sample_text = documents[0].page_content
-    sample_embedding = embed.embed_query(sample_text[:50])
+    sample_embedding = ollama_embed_one(sample_text[:50])
     dim = len(sample_embedding)
     print(f"Embedding 维度: {dim}")
 
@@ -55,7 +85,7 @@ def vector_split():
     all_texts = [doc.page_content for doc in documents]
     print(f"正在为 {len(all_texts)} 个文档片段生成 embedding...")
 
-    vectors = embed.embed_documents(all_texts)
+    vectors = ollama_embed_texts(all_texts)
     print(f"生成 {len(vectors)} 个向量")
 
     # 12、批量插入（分批避免内存问题）
