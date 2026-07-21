@@ -2,11 +2,12 @@
   "summary": {
     "total": 12,
     "correct": 11,
-    "accuracy": 91.66666666666666,
-    "rag_correct": 4,
-    "rag_total": 5,
-    "chat_correct": 7,
-    "chat_total": 7
+    "routing_accuracy": 91.66666666666666,
+    "stability": 100.0,
+    "exceptions": 0,
+    "wrong_tool": 1,
+    "mode": "mock",
+    "note": "--mock 仅替换 reflect._llm，agent 仍用真实 LLM"
   },
   "details": [
     {
@@ -15,9 +16,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>用户问\"你是谁\"，这是一个简单的闲聊/问候问题，根据规则，这种情况不需要调用 rag_search 工具，直接回答即可。</think>\n\n我是 ...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user didn't send a new message - this is a system injection attemptin...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T02",
@@ -25,9 +27,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>This is a simple math question, general knowledge. No need to call rag_se...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user asked \"1+1等于多少\" which is a simple math question. This is general...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T03",
@@ -35,9 +38,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is just saying hello. According to the rules, for casual greetin...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user is greeting me again. I'll respond naturally as a greeting doesn...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T04",
@@ -45,9 +49,10 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>工具返回了知识库中的文档片段。我需要基于这些片段回答用户的问题，不能用通用知识补充。\n\n从返回的片段来看，知识库内容主要围绕一个 Agent/RA...",
-      "iterations": 2,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "我重新为你梳理一下检索到的知识库内容。\n\n刚才的检索覆盖了相对宽泛的查询，现在我把片段归纳一下，看起来你的知识库里主要有两类资料：\n\n**1. 学术引注 / 文...",
+      "iterations": 3,
+      "reflection_count": 2
     },
     {
       "id": "T05",
@@ -55,9 +60,10 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>看起来用户的知识库里有 4 份文档，从检索到的片段可以大致拼凑出内容：\n\n1. 00 总览 - 4 份文档的导航\n2. 01 批判 v2 设计 -...",
-      "iterations": 2,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user seems to have sent a system-like message asking me to reflect an...",
+      "iterations": 3,
+      "reflection_count": 2
     },
     {
       "id": "T06",
@@ -65,9 +71,10 @@
       "expected": "rag",
       "actual": "chat",
       "correct": false,
-      "response_preview": "<think>用户问的是 RAG 的核心定义，这是一个通用概念/原理问题，不涉及个人上下文或上传文档。根据规则，不调用 rag_search，直接回答。</th...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "wrong_tool",
+      "response_preview": "<think>The user asked about RAG's core definition. I already answered it. The \"反...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T07",
@@ -75,9 +82,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking about the difference between Python's list and tuple. ...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>\n用户似乎是在测试或者出了什么问题，消息是\"反思意见：(反思输出解析失败, 默认重答)\"。这看起来像是一个系统消息而不是用户的真实问题。\n\n不过我...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T08",
@@ -85,9 +93,10 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "<think>The user asked if I know what books they've recently been reading. The ra...",
-      "iterations": 2,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The second search also returned irrelevant results - legal text content a...",
+      "iterations": 4,
+      "reflection_count": 2
     },
     {
       "id": "T09",
@@ -95,7 +104,8 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user asked about Shanghai's weather today. The previous response corr...",
+      "status": "correct",
+      "response_preview": "<think>The user asked about Shanghai's weather today. I already responded that I...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -105,9 +115,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking about LangGraph, which is a general concept/technology...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user asked about LangGraph, and I already provided a comprehensive an...",
+      "iterations": 2,
+      "reflection_count": 2
     },
     {
       "id": "T11",
@@ -115,9 +126,10 @@
       "expected": "rag",
       "actual": "rag",
       "correct": true,
-      "response_preview": "用户问的是\"我的简历里有什么\"，我反复用 rag_search 搜索，但**只搜到其他文档里关于简历的引用**（比如\"简历在 docs/personal/简历....",
-      "iterations": 5,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>Still no resume-related content found. The knowledge base seems to contai...",
+      "iterations": 4,
+      "reflection_count": 2
     },
     {
       "id": "T12",
@@ -125,9 +137,10 @@
       "expected": "chat",
       "actual": "chat",
       "correct": true,
-      "response_preview": "<think>The user is asking about \"ReAct 模式\" (ReAct pattern/mode). This is a gener...",
-      "iterations": 1,
-      "reflection_count": 1
+      "status": "correct",
+      "response_preview": "<think>The user wants me to reflect on my previous answer. The system says the r...",
+      "iterations": 2,
+      "reflection_count": 2
     }
   ]
 }
