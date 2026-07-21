@@ -13,7 +13,10 @@ from typing import Dict, List, Optional
 from pymilvus import MilvusClient
 from langchain_ollama import OllamaEmbeddings
 from utils.models.embedding_model import EmbeddingModel
+from utils.logging import get_logger
 import os
+
+logger = get_logger(__name__)
 
 # 创建全局的单例 MessageManager
 _global_msg_manager = MessageManager()
@@ -67,7 +70,7 @@ class RagModel:
 
             # 6. 检查集合是否存在
             if not self._client.has_collection(self._collection_name):
-                print(f"集合 {self._collection_name} 不存在，请先运行 vector_main.py")
+                logger.warning(f"集合 {self._collection_name} 不存在，请先运行 vector_main.py")
                 self._client = None
                 return
 
@@ -76,11 +79,11 @@ class RagModel:
             if load_state['state'] != 'Loaded':
                 self._client.load_collection(collection_name=self._collection_name)
 
-            print(f"成功连接 Milvus 向量库")
-            print(f"集合名称: {self._collection_name}")
+            logger.info(f"成功连接 Milvus 向量库")
+            logger.info(f"集合名称: {self._collection_name}")
 
         except Exception as e:
-            print(f"连接 Milvus 向量库失败：{e}")
+            logger.exception(f"连接 Milvus 向量库失败：{e}")
             self._client = None
 
     def _search_similar_chunks(self, query: str, top_k: int = 5) -> List[str]:
@@ -90,7 +93,7 @@ class RagModel:
         """
         # 1. 检查向量库是否已加载
         if not self._client:
-            print("向量库未加载，无法进行相似度搜索")
+            logger.warning("向量库未加载，无法进行相似度搜索")
             return []
 
         try:
@@ -112,7 +115,7 @@ class RagModel:
 
             return chunks
         except Exception as e:
-            print(f"相似度搜索失败：{e}")
+            logger.exception(f"相似度搜索失败：{e}")
             return []
 
     def retrieve(self, query: str, top_k: int = 5) -> List[str]:
