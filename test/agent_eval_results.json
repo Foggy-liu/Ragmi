@@ -17,7 +17,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>\nThe user is asking \"你是谁\" (Who are you?). This is a simple greeting/ident...",
+      "response_preview": "<think>The system is asking me to reflect on my previous response. Let me think ...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -28,7 +28,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>\nThe user is asking a simple math question: 1+1 equals how much. This is ...",
+      "response_preview": "<think>The user asked a simple math question: \"1+1等于多少\" (What is 1+1?). \n\nThis i...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -39,7 +39,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>\nThe user said hello (greeting). According to the rules, greetings don't ...",
+      "response_preview": "<think>用户发送了\"反思意见：(反思输出解析失败, 默认重答)\"，这看起来像是系统提示或测试信息，而不是用户实际想问的问题。我应该礼貌地询问用户的实际需求...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -50,8 +50,8 @@
       "actual": "rag",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>\nThe user is asking what's in their knowledge base. I already used rag_se...",
-      "iterations": 3,
+      "response_preview": "<think>用户要求反思。我刚才的回答有什么问题吗？\n\n1. 我调用了 rag_search 三次（一次用\"知识库内容 文档 资料\"，两次并行用\"笔记 总结 ...",
+      "iterations": 4,
       "reflection_count": 2
     },
     {
@@ -61,7 +61,7 @@
       "actual": "rag",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>The user is asking about what their previously uploaded documents covered...",
+      "response_preview": "<think>用户没有再说话，系统提示要我反思。反思点：刚才我检索出了一些法条片段，并给用户做了一个概括。这是合适的回应，没有瞎编，基于片段作答。\n\n继续等用户...",
       "iterations": 3,
       "reflection_count": 2
     },
@@ -72,7 +72,7 @@
       "actual": "chat",
       "correct": false,
       "status": "wrong_tool",
-      "response_preview": "<think>The user is asking about the core definition of RAG (Retrieval-Augmented ...",
+      "response_preview": "<think>用户的请求是\"RAG 的核心定义是什么\"。这是一个通用概念/原理类问题，不涉及用户个人的文档或笔记，因此根据规则**不需要调用 rag_searc...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -83,7 +83,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "补充一点 —— tuple 不可变，但**包含可变元素时**，那些内部元素仍可被修改：\n\n```python\nt = ([1, 2], [3, 4])\nt[0]...",
+      "response_preview": "<think>The user asked about the difference between Python's list and tuple. I al...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -94,8 +94,8 @@
       "actual": "rag",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>The search still returned legal code fragments, not anything about books....",
-      "iterations": 4,
+      "response_preview": "<think>用户给了反思意见\"反思输出解析失败, 默认重答\"。这看起来是系统反馈，提示我上一轮的回答有问题。让我重新审视一下情况。\n\n用户问\"你了解我最近读的...",
+      "iterations": 3,
       "reflection_count": 2
     },
     {
@@ -105,7 +105,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>用户问上海今天的天气。这是一个关于实时信息的问题，不涉及个人上下文，也不需要调用 rag_search 工具。我应该直接回答，说明我无法获取实时天...",
+      "response_preview": "<think>用户问的是\"上海今天天气怎么样\"。这是一个关于实时天气的查询，属于通用实时信息，不属于个人上下文或用户上传的文档/笔记范畴，所以不需要调用 rag...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -116,7 +116,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>The user asked me to introduce LangGraph. This is a general knowledge que...",
+      "response_preview": "抱歉, 我刚才的回复中没有调用任何工具, 因为 LangGraph 是一个通用的技术框架概念, 不属于\"个人上下文/上传文档\"范畴, 所以我直接基于通用知识回答...",
       "iterations": 2,
       "reflection_count": 2
     },
@@ -127,7 +127,7 @@
       "actual": "rag",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>用户没有发送新内容，还是上一轮的延续。我应该等待用户的回复，而不是重复回答。\n\n不过等等，上一轮我已经回答过了，说知识库里没有简历内容。现在应该是...",
+      "response_preview": "上一轮我已经回答了用户，没有待办项需要继续处理，等用户补充信息即可，无需再次检索。",
       "iterations": 3,
       "reflection_count": 2
     },
@@ -138,7 +138,7 @@
       "actual": "chat",
       "correct": true,
       "status": "correct",
-      "response_preview": "<think>用户问的是\"什么是 ReAct 模式\"，这是一个通用的 AI/Agent 概念问题，不涉及个人上下文（\"我的 X\"、用户上传文档等），所以**不需...",
+      "response_preview": "<think>用户问的是\"什么是 ReAct 模式\"。这是一个通用概念/原理类的问题，不涉及个人上下文或用户上传的文档，所以直接回答即可，不需要调用 rag_s...",
       "iterations": 2,
       "reflection_count": 2
     }
