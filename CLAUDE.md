@@ -4,247 +4,208 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-RAGMI is a personal knowledge base Q&A system using RAG (Retrieval-Augmented Generation) technology with an Agent framework. The system supports document upload, parsing, chunking, vectorization, and intelligent answering via LLM with ReAct agent pattern.
+RAGMI is a Python 3.11+ personal knowledge-base Q&A application. It combines a Streamlit frontend, FastAPI backend, LangGraph Agent, direct chat/RAG endpoints, document ingestion, Ollama embeddings, and Milvus vector search.
+
+The repository exposes three distinct conversation paths:
+
+- `/agent/chat`: LangGraph Agent that decides whether to call the RAG tool, then reflects on the answer.
+- `/rag`: direct RAG pipeline with its own conversation history.
+- `/chat`: direct LLM conversation with its own conversation history.
+
+Do not describe `/agent/chat` as the only chat entry point. The frontend defaults to it, but the direct `/rag` and `/chat` APIs remain mounted.
 
 ## Commands
 
-### Running the Application
+### Setup and services
 
 ```bash
-# Start FastAPI backend (port 8000)
+pip install -r requirements.txt
+cp .env.example .env
+
+# Start Milvus
+# The README notes that Milvus may need about 90 seconds before it is healthy.
+docker-compose -f docker-compose-milvus.yml up -d
+curl http://localhost:9091/healthz
+
+# Parse and vectorize documents into a fresh Milvus collection, then atomically move the configured alias.
+python utils/txt_spliter/vector_main.py
+
+# Start FastAPI backend (127.0.0.1:8000)
 python main.py
 
 # Start Streamlit frontend (port 8501)
 streamlit run main_web.py
-```
 
-### API Debug
-
-```bash
-# Check backend status
+# Backend health/model-manager inspection
 curl http://localhost:8000/debug/simple
 ```
 
-## Architecture (v2.1 LangGraph)
+`vector_main.py` reads parsed files from `txt/`. Upload processing places originals in `documents/` and parsing output in `txt/`.
 
-### Layered Architecture
+### Tests and evaluation
 
-```
-┌─────────────────────────────────────────────┐
-│  Streamlit Frontend (main_web.py)           │
-│  - Page 1: Agent 智能问答（默认）             │
-│  - Page 2: RAG 知识库问答（直连 /rag）        │
-│  - Page 3: 仓库管理配置（上传文件）            │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  FastAPI Backend (main:app, port 8000)      │
-│  - /agent/chat  - ReAct + Reflection        │
-│  - /rag         - Direct RAG                │
-│  - /chat        - Direct LLM                │
-│  - /api/upload-and-parse - 文件上传          │
-│  - /debug/simple - 后端存活探测              │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Agent Layer (agent/, LangGraph v2.1)       │
-│  - graph.py: StateGraph (3 nodes)           │
-│  - nodes/: agent / tools / reflect           │
-│  - state.py: MAX_ITERS=5, MAX_REFL=1         │
-│  - runtime.py: ask() 统一入口                │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Core Layer                                 │
-│  - core/rags/rags.py: RAG pipeline           │
-│  - utils/models/embedding_model.py           │
-│  - utils/txt_spliter/vector_main.py          │
-│    (alias swap for safe rebuild)             │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Data Layer                                 │
-│  - Milvus (alias "langchain" → active coll)  │
-│  - MessageManager: 会话历史                  │
-└─────────────────────────────────────────────┘
+```bash
+# Unit tests plus mock-mode Agent evaluation
+make test
+
+# Reflection unit tests only
+make test-unit
+
+# Agent evaluation in mock mode
+make test-mock
+
+# Agent evaluation with the configured real model/API
+make test-eval
+
+# Entire pytest-discovered suite
+pytest
+
+# One test file
+pytest test/test_reflect.py -v
+
+# One test function
+pytest test/test_reflect.py::test_name -v
+
+# Router-mount regression test
+pytest test/test_main_routes_covered.py -v
+
+# Direct evaluation commands
+PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py --mock
+PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py
 ```
 
-### ReAct Agent Pattern (v2.1)
+There is no configured lint or build command. `pytest.ini` discovers `test/test_*.py`; not every script under `test/` is a pytest test.
 
-```
-agent → {tools, reflect, END}
-  ↓
-tools → agent   (ReAct 循环)
-  ↓
-reflect → {agent, END}   (Self-Reflection)
-```
+## Runtime Architecture
 
-Tool selection：LLM 输出 JSON `{tool, confidence, reasoning}`，
-`parse_tool_choice_json()` 解析，confidence < 0.5 fallback 到 chat。
+### Frontend and API layer
 
-Self-correction (v2.1)：reflect_node 用 LLM-as-judge 评答案质量，
-不充分则追加 critique AIMessage 回 agent 重答，最多 MAX_REFL=1 次。
+`main_web.py` provides three Streamlit pages:
 
-### Key Modules
+1. Agent smart Q&A, backed by `/agent/chat`.
+2. Direct knowledge-base Q&A, backed by `/rag`.
+3. Repository administration for document upload.
 
-| Module | Purpose |
-|--------|---------|
-| `agent/graph.py` | LangGraph StateGraph (3 节点：agent/tools/reflect) |
-| `agent/state.py` | AgentState TypedDict, MAX_ITERS=5, MAX_REFL=1 |
-| `agent/runtime.py` | ask() 统一入口，含异常兜底 + debug metadata |
-| `agent/nodes/agent.py` | LLM 决策节点（bind_tools([rag_search])） |
-| `agent/nodes/reflect.py` | Self-reflection，LLM-as-judge + 兜底强制 pass |
-| `agent/nodes/should_continue.py` | 条件边路由（agent→tools/reflect/END） |
-| `agent/tools/rag_tool.py` | rag_search 工具实现（调 RagModel.retrieve） |
-| `core/rags/rags.py` | RAG pipeline：embed → search → generate |
-| `utils/models/model_setting.py` | LLM wrapper (ChatOpenAI), 多平台支持 |
-| `utils/txt_spliter/vector_main.py` | alias swap 安全重建（不丢旧数据） |
+`main.py` creates the FastAPI application and mounts:
 
-### Supported LLM Platforms
+- `/chat` from `api/api_chat.py`
+- `/rag` from `api/api_rag.py`
+- `/agent/chat` from `api/api_agent.py`
+- `/api/*` from the sub-application in `api/api_file.py`
+- model-management routes from `api/api_model.py`
 
-Configuration in `configs/model_config.yaml` and `.env`:
-- **Ollama**: Local models (deepseek-r1, qwen3)
-- **MiniMax**: Cloud API (`MINIMAX_BASE_URL`, `MINIMAX_API_KEY`)
-- **阿里云**: Qianwen series (`ALIYUN_BASE_URL`, `ALIYUN_API_KEY`)
+The application lifespan checks that `documents/` exists and probes Milvus without blocking startup on failure. Development CORS currently permits every origin; preserve the comment that production deployment should use a whitelist.
 
-### Vector Database
+### Conversation paths
 
-- **Milvus** (via `pymilvus.MilvusClient`) with Docker volume persistence
-- **Embedding**: `bge-large` via Ollama (1024 dimensions)
-- Collection alias configured in `configs/model_config.yaml` (default: `langchain`)
-- **Alias swap 模式**：`vector_main.py` 重建时建 `langchain_<ts>` 新集合，
-  原子切换 alias，老集合保留为 orphan 可清理
+The direct paths use the application-level `ModelManager` initialized in `main.py` and obtained through FastAPI dependencies:
 
-## ReAct Agent Pattern
+- `core/chat/chat.py` performs direct model conversation.
+- `core/rags/rags.py:RagModel.chat()` retrieves chunks, builds a grounded prompt, invokes the selected model, and stores history through the global `MessageManager`.
 
-The Agent implements ReAct (Reasoning + Acting):
+The Agent path is intentionally decoupled from `app.state.model_manager`:
 
-```
-Reasoning → Acting → Observation → Evaluation
-    ↓           ↓           ↓           ↓
-  LLM决定    执行Tool    获取结果    检查质量
-  工具选择              (含超时)    (充分?继续循环)
+- `api/api_agent.py` calls `agent.runtime.ask()`.
+- `agent.runtime` lazily compiles and reuses the LangGraph graph.
+- Both the Agent node and reflection node explicitly create `MiniMax-M3` rather than using the YAML default model.
+- `session_id` is passed as a LangGraph `thread_id`, but the graph has no checkpointer. Agent multi-turn persistence is therefore not implemented.
+
+## LangGraph Agent
+
+The Agent is a single-Agent, single-tool ReAct-style graph with an LLM-as-judge reflection step.
+
+```text
+START → agent
+          ├─ tool_calls present → tools → agent
+          ├─ no tool call       → reflect
+          └─ iterations >= 5    → END
+
+reflect
+  ├─ sufficient             → END
+  └─ insufficient           → append critique → agent
 ```
 
-**Tool Selection Flow**:
-1. LLM returns JSON: `{"tool": "rag", "confidence": 0.9, "reasoning": "..."}`
-2. `parse_tool_choice_json()` parses JSON
-3. If JSON fails, falls back to regex patterns
-4. If confidence < 0.5, defaults to "chat"
+### Nodes and routing
 
-**Multi-round ReAct with Self-Correction**:
-- Max 3 iterations
-- If result insufficient, adds reflection context and continues
-- RAG timeout → retry → fallback to Chat
+- `agent/graph.py` builds a `StateGraph(AgentState)` with `agent`, `tools`, and `reflect` nodes. `tools` is LangGraph's `ToolNode([rag_search])`.
+- `agent/nodes/agent.py` prepends `SYSTEM_PROMPT`, invokes `MiniMax-M3.bind_tools([rag_search])`, and appends either an answer or an AI message containing standard tool calls.
+- `agent/nodes/should_continue.py` routes tool calls to `tools`; responses without tool calls go to `reflect`; the iteration limit ends the graph.
+- `agent/nodes/reflect.py` asks another MiniMax-M3 invocation to return `is_sufficient` and `critique`. Parsing uses direct JSON, JSON-object extraction, then a fail-safe insufficient result.
+- A failed reflection appends `AIMessage("反思意见：...")`, which becomes context for one more Agent answer.
 
-## Important Notes
+### State and limits
 
-- The Agent is the **only** chat entry point (unified interface)
-- RAG and Chat are both Tools that the Agent decides when to use
-- Frontend has no mode selection - Agent automatically decides
-- Agent selects "rag" tool when question needs knowledge base, "chat" otherwise
+`agent/state.py` defines the shared state:
 
----
+- `messages`: merged with LangGraph `add_messages`.
+- `iterations`: incremented each time `agent_node` runs; `MAX_ITERS = 5`.
+- `reflection_count`: incremented by `reflect_node`; `MAX_REFL = 1`.
+- `last_reflection_pass`: controls the edge after reflection.
 
-## Agent Ecosystem Context
+When the reflection limit is reached, `reflect_node` forces a pass to prevent another loop. `iterations` counts Agent-node invocations, not only tool-use cycles.
 
-This section provides background on the broader LLM Agent landscape that informs RAGMI's design decisions.
+### Tool semantics
 
-### Why 2023-2024 Became the Agent爆发元年
+`agent/tools/rag_tool.py` exposes only `rag_search(query)`:
 
-The period from late 2023 through 2024 marked a paradigm shift in how enterprises and developers approached LLM applications. Several converging factors drove this:
+- It lazily creates one `RagModel`.
+- It calls the public `RagModel.retrieve(query, top_k=5)` method.
+- It returns raw chunks separated by `---`.
+- The Agent LLM, not `RagModel.chat()`, synthesizes the final Agent answer.
 
-1. **Capability Threshold Crossed**: LLMs improved sufficiently to move beyond single-shot completions to multi-step reasoning and action execution. Poor long-term reasoning and decision-making had been the main obstacles for developing usable LLM agents, and advances in instruction following resolved many of these bottlenecks.
+Tool selection uses LangChain/LangGraph standard Function Calling through `bind_tools()`. There is no custom `{tool, confidence, reasoning}` response parser, confidence threshold, regex tool router, or separate `ChatTool`. If no tool is required, the Agent LLM answers directly.
 
-2. **Economics of Automation**: Organizations recognized that AI agents could automate knowledge work at scale - moving from "AI as a chatbot" to "AI as a digital colleague" that could use tools, browse the web, and complete multi-day tasks autonomously.
+`agent/prompts/system_prompt.py` requires RAG answers to remain grounded in retrieved chunks and to admit when the chunks lack the answer.
 
-3. **Ecosystem Maturity**: Tool calling interfaces, vector databases, and orchestration frameworks matured to the point where production deployments became feasible.
+### Error and debug behavior
 
-### Major Platform Agent Products
+`agent.runtime.ask()` catches graph invocation exceptions and returns a fixed friendly message instead of propagating an HTTP 500. This is a general exception fallback; it does not implement RAG retry or fallback-to-chat behavior.
 
-The enterprise AI agent market consolidated around several key players:
+With `debug=True`, `ask()` returns:
 
-| Platform | Product | Key Capability |
-|----------|---------|----------------|
-| **OpenAI** | GPTs / Agents API | GPT Store ecosystem, function calling, Operator autonomous web browsing |
-| **Anthropic** | Claude Code, Claude Cowork | Multi-day scientific computing, test oracles, persistent memory, Model Context Protocol (MCP) integration |
-| **Google** | Gemini Agent Builder, Antigravity | Multi-step task execution, enterprise integrations (Shopify, GitHub, Replit), IDE agent-first development platform |
-| **Microsoft** | Foundry Agent Service, Copilot Agents | Enterprise-grade orchestration, Azure AI integration, multi-agent workflows with RBAC and observability |
-| **Amazon** | Bedrock Agents | AWS ecosystem integration, managed agent runtime |
+```text
+answer, iterations, reflection_count, score, tool_called
+```
 
-### Technical Stack Components
+The HTTP `/agent/chat` route currently calls `ask()` without debug mode and returns only `response`.
 
-Modern AI agent systems share a common architectural stack:
+## RAG and Vector Storage
 
-**1. Tool Calling (Function Calling)**
-The foundational capability that allows agents to interact with external systems. All major LLM providers now support structured tool definitions:
-- OpenAI's function calling
-- Anthropic's tool use (via Claude Code and MCP)
-- Google's multi-tool support in Gemini 3
+`core/rags/rags.py` owns the reusable retrieval pipeline:
 
-**2. Memory Management**
-Agents require persistent context mechanisms:
-- **Short-term**: Conversation history and intermediate reasoning traces
-- **Long-term**: Learned preferences, project-specific instructions (e.g., CLAUDE.md files), retrieved context from vector stores
-- **Working memory**: Ability to track state across multi-step tasks
+1. Create the configured embedding/Milvus settings through `EmbeddingModel`.
+2. Embed queries with `langchain_ollama.OllamaEmbeddings` using `bge-large` at `localhost:11434`.
+3. Search the configured Milvus collection/alias for the top five chunks.
+4. Either return chunks through `retrieve()` or build a grounded prompt and generate through `chat()`.
 
-**3. Planning and Reasoning**
-The ReAct (Reasoning + Acting) pattern became a de facto standard, involving:
-- Reasoning about which tool to use
-- Acting by executing the tool
-- Observing the result
-- Reflecting on whether the outcome is sufficient
+`utils/txt_spliter/vector_main.py` rebuilds vector data safely:
 
-Research from AgentBench (ICLR 2024) identified that "top commercial LLMs present a strong ability of acting as agents in complex environments," while open-source models under 70B parameters show "significant disparity in performance."
+1. Parse all files available through the splitter.
+2. Generate embeddings by calling Ollama `/api/embed` directly in batches.
+3. Create a timestamped collection such as `<alias>_<timestamp>`.
+4. Insert chunks and build an `AUTOINDEX` cosine index.
+5. Atomically create or move the stable alias from `configs/model_config.yaml`.
+6. Leave the old collection intact for manual cleanup or rollback.
 
-### User Scenarios and Pain Points
+Do not replace the direct Ollama HTTP embedding path in `vector_main.py` with `langchain_ollama` without investigating its documented local proxy/port issue. Note that query-time retrieval in `core/rags/rags.py` still uses `langchain_ollama`, so indexing and querying currently use different clients for the same embedding model.
 
-Based on documented enterprise deployments, primary agent use cases include:
+## Configuration
 
-**High-Frequency Automation**
-- Code review and issue triage
-- Document processing and formatting
-- Customer support escalation handling
+`configs/model_config.yaml` defines Ollama, Alibaba Cloud, OpenAI-compatible, and MiniMax platforms plus Milvus/text-splitting settings. Environment placeholders are resolved from `.env`; important variables include:
 
-**Knowledge Work Augmentation**
-- Research synthesis across multiple sources
-- Complex document drafting with context awareness
-- Data analysis with multi-tool orchestration
+- `MINIMAX_BASE_URL`, `MINIMAX_API_KEY`
+- `ALIYUN_BASE_URL`, `ALIYUN_API_KEY`
+- `OPENAI_BASE_URL`, `OPENAI_API_KEY`
+- `MILVUS_HOST`, `MILVUS_PORT`
+- optionally `OLLAMA_BASE_URL`, `EMBEDDING_MODEL`
 
-**Pain Points Observed**
-1. **Context length limitations**: Complex tasks exceed model context windows
-2. **Reliability in long-horizon tasks**: Error accumulation across many steps
-3. **Tool use consistency**: Different LLMs interpret tool schemas differently
-4. **Evaluation difficulty**: Hard to measure "was the task actually completed correctly"
+The YAML default model is not the Agent model: direct chat/RAG use the managed current model, while Agent and reflection explicitly select MiniMax-M3.
 
-### Emerging Standards: MCP
+## Important Constraints
 
-The Model Context Protocol (MCP) emerged as a USB-C-like standard for AI tool integration. Key benefits:
-- **Developer**: Reduces integration complexity - build once, deploy across Claude/ChatGPT/VS Code/Cursor
-- **Ecosystem**: Creates a marketplace of MCP servers for data sources (Google Calendar, Notion, Slack) and tools (search, calculators, code execution)
-- **Enterprise**: Enables secure connection to organizational data sources with per-key access control
-
-RAGMI's tool architecture aligns with this pattern - a BaseTool interface that agents can invoke, with RagTool and ChatTool as concrete implementations.
-
-### Academic Perspective and Future Predictions
-
-Research communities identified agent systems as a central theme at major conferences (NeurIPS, ICML, ACL). Key findings:
-
-1. **Training on code has ambivalent impacts** on different agent tasks - contrary to earlier assumptions about universal benefits
-2. **Instruction following quality** is the primary differentiator for agent performance
-3. **Multi-round alignment data** significantly improves agent reliability
-
-The shift toward "agentic AI" represents moving from reactive text generation to proactive task completion. Organizations deploying agents report productivity gains but also note the need for new governance frameworks around agent autonomy, audit trails, and safety guardrails.
-
-### References
-
-- [AgentBench: Evaluating LLMs as Agents (ICLR 2024)](https://arxiv.org/abs/2308.03688)
-- [Anthropic Research: Trustworthy AI Agents](https://www.anthropic.com/research)
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
-- [Microsoft Foundry Agent Service](https://learn.microsoft.com/en-us/azure/foundry/)
-- [Google Gemini Agent Capabilities](https://deepmind.google/technologies/gemini/)
-- [CrewAI Multi-Agent Framework](https://docs.crewai.com/)
+- Keep Agent tool output as raw retrieved chunks; final synthesis belongs to the Agent LLM.
+- Make Agent routing changes in the graph, prompts, tool schema, or conditional edges—not by reintroducing the removed custom JSON/confidence router.
+- Preserve both loop guards when modifying graph routing.
+- Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
+- `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
+- When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.
