@@ -110,64 +110,92 @@ The Agent path is intentionally decoupled from `app.state.model_manager`:
 - Both the Agent node and reflection node explicitly create `MiniMax-M3` rather than using the YAML default model.
 - `session_id` is passed as a LangGraph `thread_id`, but the graph has no checkpointer. Agent multi-turn persistence is therefore not implemented.
 
-## LangGraph Agent
+## LangGraph Agent (v2.2)
 
-The Agent is a single-Agent, single-tool ReAct-style graph with an LLM-as-judge reflection step.
+The Agent is a single-Agent, multi-tool ReAct-style graph with an LLM-as-judge reflection step. v2.2 替换 v2.1 解决 3 个 bug：节点层双角色 / counter 混叠 / 工具超时死循环。
 
 ```text
-START → agent
-          ├─ tool_calls present → tools → agent
-          ├─ no tool call       → reflect
-          └─ iterations >= 5    → END
+START → iter
+          ├─ tool_calls present → tools → iter (loop)
+          └─ no tool call (incl. "READY" / 乱码 / iter_count ≥ MAX_ITER) → synth
+
+synth
+  ├─ synth_count < MAX_SYNTH → 写答案 → reflect
+  └─ synth_count ≥ MAX_SYNTH → 强制 END
 
 reflect
-  ├─ sufficient             → END
-  └─ insufficient           → append critique → agent
+  ├─ end → END
+  ├─ rewrite → synth（synth_count 已重置）
+  ├─ re_iterate → iter（iter_count 已重置）
+  └─ reflection_count ≥ MAX_REFL → 强制 end（兜底防死循环）
 ```
 
-### Nodes and routing
+### 4 节点 vs v2.1 3 节点
 
-- `agent/graph.py` builds a `StateGraph(AgentState)` with `agent`, `tools`, and `reflect` nodes. `tools` is LangGraph's `ToolNode([rag_search])`.
-- `agent/nodes/agent.py` prepends `SYSTEM_PROMPT`, invokes `MiniMax-M3.bind_tools([rag_search])`, and appends either an answer or an AI message containing standard tool calls.
-- `agent/nodes/should_continue.py` routes tool calls to `tools`; responses without tool calls go to `reflect`; the iteration limit ends the graph.
-- `agent/nodes/reflect.py` asks another MiniMax-M3 invocation to return `is_sufficient` and `critique`. Parsing uses direct JSON, JSON-object extraction, then a fail-safe insufficient result.
-- A failed reflection appends `AIMessage("反思意见：...")`, which becomes context for one more Agent answer.
+v2.1 节点：`agent`（决策+综合双角色）/ `tools` / `reflect`
 
-### State and limits
+v2.2 节点：`iter`（纯决策，不写答案）/ `tools` / `synth`（综合）/ `reflect`
 
-`agent/state.py` defines the shared state:
+分离原因：v2.1 agent_node 同时承担"决定要不要调工具"和"写最终答案"两种 LLM 模式，互相干扰。v2.2 拆为 2 个节点 + `iter` 用 `READY` 信号交接。
 
-- `messages`: merged with LangGraph `add_messages`.
-- `iterations`: incremented each time `agent_node` runs; `MAX_ITERS = 5`.
-- `reflection_count`: incremented by `reflect_node`; `MAX_REFL = 1`.
-- `last_reflection_pass`: controls the edge after reflection.
+### 3 counter vs v2.1 单 counter
 
-When the reflection limit is reached, `reflect_node` forces a pass to prevent another loop. `iterations` counts Agent-node invocations, not only tool-use cycles.
+v2.1：`iterations`（单计数器，混叠 agent_node 决策+综合次数，导致反思触发条件短路）
 
-### Tool semantics
+v2.2：`iter_count` / `synth_count` / `reflection_count` 三个独立计数器，各管自己的节点：
 
-`agent/tools/rag_tool.py` exposes only `rag_search(query)`:
+- `iter_count` — iter 节点调用次数，上限 `MAX_ITER=3`，reflect rewrite/re_iterate 时重置
+- `synth_count` — synth 节点调用次数，上限 `MAX_SYNTH=2`，reflect 时重置
+- `reflection_count` — reflect 节点调用次数，上限 `MAX_REFL=3`，**永不重置**（绝对上限，防死循环）
 
-- It lazily creates one `RagModel`.
-- It calls the public `RagModel.retrieve(query, top_k=5)` method.
-- It returns raw chunks separated by `---`.
-- The Agent LLM, not `RagModel.chat()`, synthesizes the final Agent answer.
+### 工具状态（防死循环 bug）
 
-Tool selection uses LangChain/LangGraph standard Function Calling through `bind_tools()`. There is no custom `{tool, confidence, reasoning}` response parser, confidence threshold, regex tool router, or separate `ChatTool`. If no tool is required, the Agent LLM answers directly.
+`StatusToolNode(ToolNode)` 包装 LangGraph ToolNode，写 `state["tool_status"]` 字典：
 
-`agent/prompts/system_prompt.py` requires RAG answers to remain grounded in retrieved chunks and to admit when the chunks lack the answer.
+| 值 | 触发条件 |
+|---|---|
+| `success` | 工具返回非空内容 |
+| `empty` | 工具返回空字符串 |
+| `timeout` | 工具抛 TimeoutError |
+| `error` | 工具抛其他异常 |
 
-### Error and debug behavior
+reflect prompt 硬约束：工具 timeout/error 时不应判 `re_iterate`（否则 `iter → tools(超时) → iter` 死循环）。即便 LLM 误判，`MAX_REFL=3` 兜底强制 end。
 
-`agent.runtime.ask()` catches graph invocation exceptions and returns a fixed friendly message instead of propagating an HTTP 500. This is a general exception fallback; it does not implement RAG retry or fallback-to-chat behavior.
+### 配置
 
-With `debug=True`, `ask()` returns:
+`configs/agent_config.yaml` 定义 `MAX_ITER` / `MAX_SYNTH` / `MAX_REFL`。`agent/constants.py` 加载并导出，启动时 assert 校验。
 
-```text
-answer, iterations, reflection_count, score, tool_called
+### 工具清单
+
+4 个：`rag_search`（已有）/ `calculator` / `weather` / `web_search`（3 个占位实现）。
+
+### 节点细节
+
+- `agent/nodes/iter_node.py`：`bind_tools(ALL_TOOLS)`，prompt 强制"不调工具时输出 READY"，含 try/except + `iter_count >= MAX_ITER` 边界检查
+- `agent/nodes/synth_node.py`：不挂 `bind_tools`，按 `state["last_critique"]` 是否空切换 prompt 模式（首次 vs 重写），含 try/except + `synth_count >= MAX_SYNTH` 边界检查
+- `agent/nodes/reflect_node.py`：用 `with_structured_output(ReflectOutput)`，Pydantic 解析；失败 fallback `next_action=rewrite`；超 `MAX_REFL` 强制 end；rewrite/re_iterate 时重置 iter/synth count
+- `agent/nodes/status_tool_node.py`：包装 `ToolNode`，4 种 status 值 + ToolMessage 兜底（避免 graph 卡在 tool_calls 未应答）
+- `agent/nodes/should_continue.py`：含 2 个条件边函数（`should_continue` + `after_reflect`）
+
+### 状态 Schema
+
+```python
+class AgentState(TypedDict, total=False):
+    messages: Annotated[list, add_messages]
+    iter_count: Annotated[int, _inc_iter]
+    synth_count: Annotated[int, _inc_synth]
+    reflection_count: Annotated[int, _inc_refl]
+    tool_status: Annotated[dict, _merge_tool_status]
+    last_critique: str
 ```
 
-The HTTP `/agent/chat` route currently calls `ask()` without debug mode and returns only `response`.
+### Runtime
+
+`agent.runtime.ask()` debug 模式返回 6 字段：`answer` / `iter_count` / `synth_count` / `reflection_count` / `tool_called` / `last_action`。`api/api_agent.py` 仍调 `ask()` 非 debug 模式。
+
+### 错误和调试
+
+`ask()` 仍捕获 graph 调用异常返回友好消息（不抛 HTTP 500）。`ask()` debug=True 返回 dict 含 `last_action` 字段（end / rewrite / re_iterate / error）。
 
 ## RAG and Vector Storage
 
