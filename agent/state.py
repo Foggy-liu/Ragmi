@@ -1,55 +1,77 @@
-"""RAGMI Agent State —— LangGraph 状态契约 (v2.1)。
+"""RAGMI Agent State —— LangGraph 状态契约 (v2.2)。
 
-所有 node / edge / tool 都对 AgentState 做读和写。
-本文件定义了图运行期间的"数据形状"，是其他组件依赖的契约。
+6 字段 schema：
+- messages: 消息历史（add_messages reducer）
+- iter_count: iter 节点计数器（_inc_iter reducer）
+- synth_count: synth 节点计数器（_inc_synth reducer）
+- reflection_count: reflect 节点计数器（_inc_refl reducer）
+- tool_status: 多工具状态字典（_merge_tool_status reducer）
+- last_critique: reflect 节点输出的反馈（synth 重写模式读）
+
+替代 v2.1 的 iterations + last_reflection_pass。
 """
-
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-# ===== v2.1 新增常量 =====
-# 上限：agent_node 最多被调 5 次（含决策/综合/重答）
-MAX_ITERS = 5
-# 上限：reflect_node 最多被调 1 次（第 2 次边际收益<10%）
-MAX_REFL = 1
+# ===== Reducer =====
 
-
-def _increment(old: int, new: int) -> int:
-    """iterations 字段的 reducer：把节点返回的增量累加到当前值。
-
-    用法：agent_node 每次 return {"iterations": 1}，框架自动 +1。
-    若直接覆盖（lambda old, new: new），需要节点自己读 state.get() + 1，代码更冗长。
-    """
+def _inc_iter(old: int, new: int) -> int:
+    """iter_count 字段 reducer：节点返回增量，框架累加。"""
     return (old or 0) + (new or 0)
 
 
-class AgentState(TypedDict, total=False):
-    """Agent 运行时状态。
+def _inc_synth(old: int, new: int) -> int:
+    """synth_count 字段 reducer。"""
+    return (old or 0) + (new or 0)
 
-    total=False 表示：所有字段都可选，新建会话可直接传入空 dict 起步。
+
+def _inc_refl(old: int, new: int) -> int:
+    """reflection_count 字段 reducer。"""
+    return (old or 0) + (new or 0)
+
+
+def _merge_tool_status(old: dict, new: dict) -> dict:
+    """tool_status 字段 reducer：合并而非覆盖（多工具串行调用时）。"""
+    return {**(old or {}), **(new or {})}
+
+
+# ===== State Schema =====
+
+class AgentState(TypedDict, total=False):
+    """v2.2 Agent 运行时状态。
 
     字段说明
     --------
     messages : list[BaseMessage]
-        消息历史（用户 / AI / 工具三类轮流出现）。
-        add_messages 是 LangGraph 的 reducer：每个节点 return {"messages": [...]} 时，
-        引擎调用 add_messages 决定如何合并到现有 messages。
-
-    iterations : int
-        agent 节点执行次数计数器。超 MAX_ITERS 强制 END（should_continue 里检查）。
-
-    reflection_count : int  ← v2.1 新增
-        reflect_node 执行次数计数器。超 MAX_REFL 强制 pass（reflect_node 里检查）。
-
-    last_reflection_pass : bool  ← v2.1 新增
-        最近一次 reflect_node 评判结果。条件边 after_reflect 读这个决定路由。
-        - True → END（通过）
-        - False → agent（带 critique 重答）
+        消息历史（add_messages reducer）。
+    iter_count : int
+        iter 节点调用次数。reflect 触发 rewrite/re_iterate 时重置为 0。
+    synth_count : int
+        synth 节点调用次数。reflect 触发时重置为 0。
+    reflection_count : int
+        reflect 节点调用次数。永不重置（绝对上限）。
+    tool_status : dict[str, str]
+        多工具状态字典（rag_search: success / calculator: timeout ...）。
+    last_critique : str
+        reflect 节点最新输出的 critique；synth 重写模式时读取。
     """
-
     messages: Annotated[list[BaseMessage], add_messages]
-    iterations: Annotated[int, _increment]
-    reflection_count: Annotated[int, _increment]
-    last_reflection_pass: bool
+    iter_count: Annotated[int, _inc_iter]
+    synth_count: Annotated[int, _inc_synth]
+    reflection_count: Annotated[int, _inc_refl]
+    tool_status: Annotated[dict[str, str], _merge_tool_status]
+    last_critique: str
+
+
+def initial_state(question: str) -> AgentState:
+    """构造 Agent 初始 state。"""
+    return {
+        "messages": [],
+        "iter_count": 0,
+        "synth_count": 0,
+        "reflection_count": 0,
+        "tool_status": {},
+        "last_critique": "",
+    }
