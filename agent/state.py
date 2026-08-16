@@ -17,18 +17,29 @@ from langgraph.graph.message import add_messages
 
 # ===== Reducer =====
 
-def _inc_iter(old: int, new: int) -> int:
-    """iter_count 字段 reducer：节点返回增量，框架累加。"""
+def _reset_or_inc(old: int, new: int) -> int:
+    """带重置语义的累加 reducer（用于 iter_count / synth_count）。
+
+    LangGraph reducer 默认是纯累加：(old or 0) + (new or 0)。
+    但 reflect_node 需要"重置"语义（rewrite/re_iterate 时把 iter/synth 归 0），
+    用累加 reducer 做不到（旧 + 0 = 旧）。
+
+    约定：
+    - 节点返回 0 → 显式重置（reflect_node 用）
+    - 节点返回 > 0 → 累加（iter_node / synth_node 用）
+    """
+    if new == 0:
+        return 0
     return (old or 0) + (new or 0)
 
 
-def _inc_synth(old: int, new: int) -> int:
-    """synth_count 字段 reducer。"""
-    return (old or 0) + (new or 0)
+# 向后兼容别名（测试 plan 中已引用 _inc_iter / _inc_synth）
+_inc_iter = _reset_or_inc
+_inc_synth = _reset_or_inc
 
 
 def _inc_refl(old: int, new: int) -> int:
-    """reflection_count 字段 reducer。"""
+    """reflection_count 字段 reducer：永远累加（绝对上限，不重置）。"""
     return (old or 0) + (new or 0)
 
 
