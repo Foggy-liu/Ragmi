@@ -1,57 +1,63 @@
-"""agent/graph.py —— LangGraph 图装配 (v2.1)。
+"""agent/graph.py —— LangGraph 图装配 (v2.2)。
 
-节点：agent / tools / reflect
+4 节点：iter / tools / synth / reflect
 边：
-  agent → {tools, reflect, __end__}       (should_continue)
-  tools → agent
-  reflect → {agent, __end__}              (after_reflect)
+  START → iter (无条件)
+  iter → {tools, synth} (should_continue)
+  tools → iter (无条件)
+  synth → reflect (无条件)
+  reflect → {END, synth, iter} (after_reflect)
 """
-
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import ToolNode
 
-from agent.nodes.agent import agent_node
-from agent.nodes.reflect import reflect_node
+from agent.nodes.iter_node import iter_node
+from agent.nodes.reflect_node import reflect_node
 from agent.nodes.should_continue import after_reflect, should_continue
+from agent.nodes.status_tool_node import StatusToolNode
+from agent.nodes.synth_node import synth_node
 from agent.state import AgentState
-from agent.tools.rag_tool import rag_search
+from agent.tools import ALL_TOOLS
 
 
 def build_graph():
     """构造 + 编译 LangGraph 图，返回可 invoke 的对象。"""
-    tool_node = ToolNode([rag_search])
+    tool_node = StatusToolNode(ALL_TOOLS)
 
     workflow = StateGraph(AgentState)
 
-    # 节点
-    workflow.add_node("agent", agent_node)
+    # 4 节点
+    workflow.add_node("iter", iter_node)
     workflow.add_node("tools", tool_node)
+    workflow.add_node("synth", synth_node)
     workflow.add_node("reflect", reflect_node)
 
     # 入口
-    workflow.set_entry_point("agent")
+    workflow.set_entry_point("iter")
 
-    # 第一个条件边：agent → {tools, reflect, END}
+    # 第一个条件边：iter → {tools, synth}
     workflow.add_conditional_edges(
-        "agent",
+        "iter",
         should_continue,
         {
             "tools": "tools",
-            "reflect": "reflect",
-            "__end__": END,
+            "synth": "synth",
         },
     )
 
-    # 工具执行完回到 agent（ReAct 循环核心）
-    workflow.add_edge("tools", "agent")
+    # tools → iter（ReAct 循环核心）
+    workflow.add_edge("tools", "iter")
 
-    # 第二个条件边：reflect → {agent, END}
+    # synth → reflect（无条件）
+    workflow.add_edge("synth", "reflect")
+
+    # 第二个条件边：reflect → {END, synth, iter}
     workflow.add_conditional_edges(
         "reflect",
         after_reflect,
         {
-            "agent": "agent",
-            "__end__": END,
+            "end": END,
+            "rewrite": "synth",
+            "re_iterate": "iter",
         },
     )
 
