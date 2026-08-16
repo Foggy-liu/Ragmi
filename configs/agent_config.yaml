@@ -1,0 +1,9 @@
+# configs/agent_config.yaml —— v2.2 Agent 节点计数上限
+# 加载方：agent/constants.py
+agent:
+  iter:
+    max_per_cycle: 3       # iter 节点单 cycle 上限；reflect 触发 re_iterate/rewrite 时重置
+  synth:
+    max_per_cycle: 2       # synth 节点单 cycle 上限；reflect 触发时重置
+  reflect:
+    max_absolute: 3        # reflect 节点绝对上限；永不重置，超限强制 end
