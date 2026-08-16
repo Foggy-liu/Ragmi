@@ -1,11 +1,11 @@
-"""agent/runtime.py —— 对外统一调用入口 (v2.1)。
+"""agent/runtime.py —— 对外统一调用入口 (v2.2)。
 
-App 层（main.py / main_web.py / API 层）只调这一个函数。
-
-v2.1 增强：
-- 异常统一兜底（LLM 调用失败 / 超时不会 500）
-- debug 模式返回 metadata（iterations / reflection_count / score / tool_called）
+v2.2 变化：
+- debug 模式返回 6 字段：answer / iter_count / synth_count / reflection_count / tool_called / last_action
+- last_action 来自 state.next_action（reflect 节点的输出）
+- 删除 score 字段（v2.1 由 last_reflection_pass 推导，v2.2 用 last_action 替代）
 """
+from langchain_core.messages import AIMessage
 
 from agent.graph import build_graph
 from utils.logging import get_logger
@@ -24,17 +24,12 @@ def _get_graph():
     return _graph
 
 
-def _compute_score(result: dict):
-    """从 reflection_count + last_reflection_pass 推导 score。
-
-    - None: 没触发反思（直接通过的简单 chat / RAG）
-    - True: 反思触发且通过
-    - False: 反思判不足但 MAX_REFL 兜底放行（需人工 review）
-    """
-    refl_count = result.get("reflection_count", 0)
-    if refl_count == 0:
-        return None
-    return bool(result.get("last_reflection_pass", False))
+def _extract_answer(messages: list) -> str:
+    """从 messages 中提取最后一条 AIMessage 的内容作为答案。"""
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            return msg.content or ""
+    return ""
 
 
 def _error_response(debug: bool):
@@ -43,11 +38,11 @@ def _error_response(debug: bool):
         return msg
     return {
         "answer": msg,
-        "iterations": 0,
+        "iter_count": 0,
+        "synth_count": 0,
         "reflection_count": 0,
-        "score": None,
         "tool_called": False,
-        "error": True,
+        "last_action": "error",
     }
 
 
@@ -65,7 +60,7 @@ def ask(
 
     输出：
     - debug=False: 纯文本答案
-    - debug=True: {"answer", "iterations", "reflection_count", "score", "tool_called"}
+    - debug=True: {"answer", "iter_count", "synth_count", "reflection_count", "tool_called", "last_action"}
     """
     graph = _get_graph()
     config = {"configurable": {"thread_id": session_id}} if session_id else None
@@ -73,28 +68,26 @@ def ask(
     logger.info(f"ask() entry: query={question[:50]}... session={session_id}")
 
     try:
+        from langchain_core.messages import HumanMessage
         result = graph.invoke(
-            {"messages": [("user", question)]},
+            {"messages": [HumanMessage(question)]},
             config=config,
         )
     except Exception as e:
         logger.exception(f"ask() failed: {type(e).__name__}: {e}")
         return _error_response(debug)
 
-    answer = result["messages"][-1].content
+    answer = _extract_answer(result["messages"])
 
     if not debug:
         return answer
 
-    # debug 模式: 返回 metadata
-    tool_called = any(
-        msg.__class__.__name__ == "ToolMessage"
-        for msg in result["messages"]
-    )
+    # debug 模式：返回 6 字段 metadata
     return {
         "answer": answer,
-        "iterations": result.get("iterations", 0),
+        "iter_count": result.get("iter_count", 0),
+        "synth_count": result.get("synth_count", 0),
         "reflection_count": result.get("reflection_count", 0),
-        "score": _compute_score(result),
-        "tool_called": tool_called,
+        "tool_called": bool(result.get("tool_status", {})),
+        "last_action": result.get("next_action", "end"),
     }
