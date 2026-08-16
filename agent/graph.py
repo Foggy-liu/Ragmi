@@ -51,13 +51,17 @@ def build_graph():
     workflow.add_edge("synth", "reflect")
 
     # 第二个条件边：reflect → {END, synth, iter}
+    # path_map 的 key 必须与 after_reflect() 的返回值匹配（节点名）：
+    #   "__end__" → END
+    #   "synth"   → synth 节点
+    #   "iter"    → iter 节点
     workflow.add_conditional_edges(
         "reflect",
         after_reflect,
         {
-            "end": END,
-            "rewrite": "synth",
-            "re_iterate": "iter",
+            "__end__": END,
+            "synth": "synth",
+            "iter": "iter",
         },
     )
 
