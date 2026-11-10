@@ -20,7 +20,7 @@ def _get_graph():
     """懒加载 graph 单例。"""
     global _graph
     if _graph is None:
-        _graph = build_graph()
+        _graph = _graph()
     return _graph
 
 
