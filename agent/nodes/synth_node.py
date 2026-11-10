@@ -5,20 +5,26 @@
 - 重写：state["last_critique"] 非空 → 基于素材 + critique 改写
 
 不调工具（v2.1 节点双角色 bug 修复点）。
+
+think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMessage.content
+自动剥掉 ``<think>...</think>`` 块（推理模型污染防护，避免污染 state.messages）。
 """
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agent.constants import MAX_SYNTH
+from agent.llm_wrapper import ThinkingStripRunnable
 from agent.prompts.synth_prompt import SYNTH_PROMPT
 from agent.state import AgentState
 
 
 def _get_llm():
-    """懒加载 LLM（不挂 bind_tools，30s 超时）。"""
+    """懒加载 LLM（不挂 bind_tools，30s 超时 + 剥 think）。"""
     from utils.models.model_setting import LLMmodel
 
-    llm_instance = LLMmodel.create_minimax("MiniMax-M3")
-    return llm_instance.chat.with_config({"timeout": 30})
+    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
+    return ThinkingStripRunnable(
+        llm_instance.chat.with_config({"timeout": 30})
+    )
 
 
 def _format_tool_status(tool_status: dict) -> str:

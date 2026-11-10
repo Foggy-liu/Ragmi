@@ -4,7 +4,7 @@
 1. 只检索、不生成 —— 工具返回原始 chunks，最终答案由 agent LLM 自己综合
 2. 走 RagModel.retrieve() 公开方法 —— 不穿透私有方法，未来 RAG 演进不影响 agent
 3. 懒加载 RagModel 单例 —— 首次调用才连 Milvus，后续复用
-4. 显式用 MiniMax-M3 —— 构造 RagModel 时指定（虽然方案 2 不用 RAG 内部 LLM，
+4. 显式用 MiniMax-M3.1-Flash —— 构造 RagModel 时指定（虽然方案 2 不用 RAG 内部 LLM，
    但 RagModel.__init__ 要求 model_manager，所以配一个真实的）
 """
 
@@ -24,8 +24,8 @@ def _ensure_rag() -> RagModel:
     if _rag_model is None:
         manager = ModelManager()
         manager.load_config_models()
-        # 显式用 M3（RagModel 构造需要 model_manager，但方案 2 不调 RAG 内部 LLM）
-        rag_llm = LLMmodel.create_minimax("MiniMax-M3")
+        # 显式用 M3.1-Flash（RagModel 构造需要 model_manager，但方案 2 不调 RAG 内部 LLM）
+        rag_llm = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
         manager.set_current_model(rag_llm)
         _rag_model = RagModel(manager)
     return _rag_model

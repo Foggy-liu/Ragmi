@@ -6,6 +6,9 @@ v2.2 变化（vs v2.1）：
 - 失败 fallback：next_action = rewrite（reflection_count 上限兜底防死循环）
 - reflection_count >= MAX_REFL → 强制 next_action = end
 - rewrite / re_iterate 时重置 iter_count + synth_count = 0
+
+think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMessage.content
+自动剥掉 ``<think>...</think>`` 块（推理模型污染防护，让 Pydantic 能解析 JSON）。
 """
 from typing import Literal
 
@@ -13,6 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from agent.constants import MAX_REFL
+from agent.llm_wrapper import ThinkingStripRunnable
 from agent.prompts.reflect_prompt import REFLECT_PROMPT
 from agent.state import AgentState
 
@@ -31,11 +35,11 @@ class ReflectOutput(BaseModel):
 
 
 def _get_llm():
-    """懒加载反思 LLM（with_structured_output, 30s 超时）。"""
+    """懒加载反思 LLM（with_structured_output, 30s 超时 + 剥 think）。"""
     from utils.models.model_setting import LLMmodel
 
-    llm_instance = LLMmodel.create_minimax("MiniMax-M3")
-    return (
+    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
+    return ThinkingStripRunnable(
         llm_instance.chat
         .with_structured_output(ReflectOutput)
         .with_config({"timeout": 30})

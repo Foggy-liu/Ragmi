@@ -104,8 +104,8 @@ class LLMmodel:
         return LLMmodel(platform="aliyun", model_name=model_name, **kwargs)
 
     @staticmethod
-    def create_minimax(model_name="MiniMax-M2.5", **kwargs):
-        """快速创建minimax平台模型实例（默认 MiniMax-M2.5）"""
+    def create_minimax(model_name="MiniMax-M3.1-Flash", **kwargs):
+        """快速创建minimax平台模型实例（默认 MiniMax-M3.1-Flash）"""
         return LLMmodel(platform="minimax", model_name=model_name, **kwargs)
 
     # @staticmethod

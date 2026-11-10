@@ -4,21 +4,25 @@
 
 边界检查：iter_count >= MAX_ITER → 强制 END。
 LLM 异常兜底：try/except 包裹 llm.invoke()，失败时返回 READY 信号（不写答案）。
+
+think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMessage.content
+自动剥掉 ``<think>...</think>`` 块（推理模型污染防护）。
 """
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agent.constants import MAX_ITER
+from agent.llm_wrapper import ThinkingStripRunnable
 from agent.prompts.iter_prompt import ITER_PROMPT
 from agent.state import AgentState
 from agent.tools import ALL_TOOLS
 
 
 def _get_llm():
-    """懒加载 LLM（已 bind_tools(ALL_TOOLS), 30s 超时）。"""
+    """懒加载 LLM（已 bind_tools(ALL_TOOLS), 30s 超时 + 剥 think）。"""
     from utils.models.model_setting import LLMmodel
 
-    llm_instance = LLMmodel.create_minimax("MiniMax-M3")
-    return (
+    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
+    return ThinkingStripRunnable(
         llm_instance.chat
         .bind_tools(ALL_TOOLS)
         .with_config({"timeout": 30})

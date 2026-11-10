@@ -107,7 +107,7 @@ The Agent path is intentionally decoupled from `app.state.model_manager`:
 
 - `api/api_agent.py` calls `agent.runtime.ask()`.
 - `agent.runtime` lazily compiles and reuses the LangGraph graph.
-- Both the Agent node and reflection node explicitly create `MiniMax-M3` rather than using the YAML default model.
+- Both the Agent node and reflection node explicitly create `MiniMax-M3.1-Flash` rather than using the YAML default model.
 - `session_id` is passed as a LangGraph `thread_id`, but the graph has no checkpointer. Agent multi-turn persistence is therefore not implemented.
 
 ## LangGraph Agent (v2.2)
@@ -227,7 +227,7 @@ Do not replace the direct Ollama HTTP embedding path in `vector_main.py` with `l
 - `MILVUS_HOST`, `MILVUS_PORT`
 - optionally `OLLAMA_BASE_URL`, `EMBEDDING_MODEL`
 
-The YAML default model is not the Agent model: direct chat/RAG use the managed current model, while Agent and reflection explicitly select MiniMax-M3.
+Model selection: direct chat/RAG use the managed current model, while Agent nodes explicitly select MiniMax-M3.1-Flash. These currently name the same model, but the Agent path obtains it independently of `app.state.model_manager` — switching the YAML default does not change which model the Agent calls.
 
 ## Important Constraints
 
