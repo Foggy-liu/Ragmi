@@ -56,13 +56,13 @@
   <div class="meta">
     测试时间: <span id="ts"></span> &nbsp;|&nbsp;
     Backend: <code>http://localhost:8000</code> &nbsp;|&nbsp;
-    总数: <span id="total">8</span>
+    总数: <span id="total">7</span>
   </div>
 
   <div class="summary">
     <div class="card"><div>Pass</div><div class="num" id="passCount">0</div></div>
     <div class="card"><div>Fail</div><div class="num" id="failCount">0</div></div>
-    <div class="card"><div>Pending</div><div class="num" id="pendingCount">8</div></div>
+    <div class="card"><div>Pending</div><div class="num" id="pendingCount">7</div></div>
   </div>
 
   <table id="results">
@@ -79,7 +79,7 @@
   <script>
     document.getElementById('ts').textContent = new Date().toLocaleString('zh-CN');
 
-    // 8 个 JSON 接口（跳过 multipart upload，单独测）
+    // 7 个 JSON 接口（跳过 multipart upload + 移除已删的 /vector dead code）
     const endpoints = [
       { name: 'debug/simple',    method: 'GET',  url: '/debug/simple',    body: null,                                  desc: '后端存活探测' },
       { name: 'chat',            method: 'POST', url: '/chat',            body: { query: '你好，请介绍下你自己' },        desc: '直接 LLM' },
@@ -88,7 +88,6 @@
       { name: 'switch_model',    method: 'POST', url: '/switch_model',    body: { platform: 'minimax', model_name: 'MiniMax-M3' }, desc: '切模型' },
       { name: 'available',       method: 'GET',  url: '/available',       body: null,                                  desc: '可用模型列表' },
       { name: 'current_model',   method: 'GET',  url: '/current_model',   body: null,                                  desc: '当前模型' },
-      { name: 'vector',          method: 'POST', url: '/vector',          body: { query: 'bge-large 是什么模型' },        desc: '向量检索' },
     ];
 
     // 先插入 pending 行
