@@ -1,8 +1,10 @@
 """web_page/rag_direct_page.py —— 直连 /rag 的简单问答页面（无 Agent 编排）。"""
+import os
+
 import requests
 import streamlit as st
 
-API_BASE = "http://api:8000"
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 def rag_direct_page():

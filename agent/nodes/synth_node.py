@@ -11,28 +11,25 @@ think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMess
 """
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from agent.constants import MAX_SYNTH
+from agent.constants import LLM_TIMEOUT
 from agent.llm_wrapper import ThinkingStripRunnable
+from agent.nodes.material import collect_round_material
+from agent.nodes.status_tool_wrapper import format_tool_status
 from agent.prompts.synth_prompt import SYNTH_PROMPT
 from agent.state import AgentState
+from agent.timeout import is_expired
 
 
 def _get_llm():
-    """懒加载 LLM（不挂 bind_tools，30s 超时 + 剥 think）。"""
+    """懒加载 LLM（不挂 bind_tools，LLM_TIMEOUT 超时 + 剥 think）。
+
+    超时用 ChatOpenAI 构造参数（timeout=），不是 .with_config({"timeout": N}）
+    —— 后者 langchain_core 从不读 RunnableConfig["timeout"]，是无效代码。
+    """
     from utils.models.model_setting import LLMmodel
 
-    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
-    return ThinkingStripRunnable(
-        llm_instance.chat.with_config({"timeout": 30})
-    )
-
-
-def _format_tool_status(tool_status: dict) -> str:
-    """把 tool_status dict 格式化为可读字符串。"""
-    if not tool_status:
-        return "（无工具调用）"
-    lines = [f"- {name}: {status}" for name, status in tool_status.items()]
-    return "\n".join(lines)
+    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash", timeout=LLM_TIMEOUT)
+    return ThinkingStripRunnable(llm_instance.chat)
 
 
 def synth_node(state: AgentState, llm=None) -> dict:
@@ -43,16 +40,17 @@ def synth_node(state: AgentState, llm=None) -> dict:
         llm: 可选注入的 LLM（测试用）；None 时懒加载真实 LLM
 
     Returns:
-        dict 含 "messages" (单条 AIMessage) 和 "synth_count" 增量 + "last_critique" 透传
+        dict 含 "messages" (单条 AIMessage) 和 "last_critique" 透传
     """
-    synth_count = state.get("synth_count") or 0
-
-    # 边界：综合上限强制输出提示
-    if synth_count >= MAX_SYNTH:
+    # 图级总时限检查：超时时把「上一次的答案」交给用户，
+    # 比干巴巴一句"超时"有用得多（放在 _get_llm() 之前，避免白加载一次 LLM）
+    if is_expired(state):
+        prev = (state.get("last_answer") or "").strip()
         return {
-            "messages": [AIMessage(content="已达综合上限，结束")],
-            "synth_count": 1,
+            "messages": [AIMessage(content=prev or "回答超时：思考时间超过总时限")],
             "last_critique": state.get("last_critique", ""),
+            "last_answer": prev,
+            "expired": True,
         }
 
     if llm is None:
@@ -63,20 +61,15 @@ def synth_node(state: AgentState, llm=None) -> dict:
     tool_status = state.get("tool_status", {})
     last_critique = state.get("last_critique", "")
 
-    # 提取素材：从 messages 中找最近的 ToolMessage 内容
-    chunks_text = ""
-    for msg in reversed(state["messages"]):
-        # ToolMessage 是 LangChain 标准类，有 content 属性
-        if msg.__class__.__name__ == "ToolMessage" and getattr(msg, "content", ""):
-            chunks_text = msg.content
-            break
+    # 提取素材：本轮（最后一条 HumanMessage 之后）的全部 ToolMessage
+    chunks_text = collect_round_material(state["messages"])
 
     prompt_messages = [
         SystemMessage(content=SYNTH_PROMPT),
         HumanMessage(content=(
             f"【用户问题】\n{question}\n\n"
-            f"【可用素材】（如果有）\n{chunks_text}\n\n"
-            f"【工具状态】\n{_format_tool_status(tool_status)}\n\n"
+            f"【可用素材】（如果有——本轮查到的全部资料）\n{chunks_text or '（无）'}\n\n"
+            f"【工具状态】\n{format_tool_status(tool_status)}\n\n"
             f"【反思反馈】（如果有——重写模式才有）\n{last_critique}\n"
         )),
     ]
@@ -89,6 +82,6 @@ def synth_node(state: AgentState, llm=None) -> dict:
 
     return {
         "messages": [response],
-        "synth_count": 1,
         "last_critique": last_critique,  # 透传（reflect 下次会更新）
+        "last_answer": (response.content or "").strip(),
     }

@@ -1,26 +1,42 @@
 """agent/runtime.py —— 对外统一调用入口 (v2.2)。
 
 v2.2 变化：
-- debug 模式返回 6 字段：answer / iter_count / synth_count / reflection_count / tool_called / last_action
+- debug 模式返回 5 字段：answer / iter_count / reflection_count / tool_called / last_action
 - last_action 来自 state.next_action（reflect 节点的输出）
 - 删除 score 字段（v2.1 由 last_reflection_pass 推导，v2.2 用 last_action 替代）
 """
+import time
+
 from langchain_core.messages import AIMessage
 
+from agent.constants import MAX_ITER, MAX_REFL, TOTAL_TIMEOUT
 from agent.graph import build_graph
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# 图的循环预算：给 LangGraph 的 recursion_limit 兜底。
+# 最坏情况 = 每轮 re_iterate 步数 × reflect 轮数
+#   每轮：iter/tools 交替最多 2*MAX_ITER 步 + synth + reflect = 2*MAX_ITER + 2
+#   轮数：reflect 最多被调用 MAX_REFL+1 次（最后一次进 reflect 时 count 已达上限，强制 end）
+# 默认 25 不够（MAX_ITER=3/MAX_REFL=3 时最坏 28 步）→ 撞 GraphRecursionError，
+# 表现为 ask() 兜底成"agent 调用异常"，而不是给出答案。
+_STEPS_PER_ROUND = 2 * MAX_ITER + 2
+RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10
 
 
 _graph = None
 
 
 def _get_graph():
-    """懒加载 graph 单例。"""
+    """懒加载 graph 单例。
+
+    注意：右边必须是 build_graph()（调用造图函数），不能写成 _graph()——
+    那是"把变量 _graph 当函数调用"，而它的值是 None → TypeError。
+    """
     global _graph
     if _graph is None:
-        _graph = _graph()
+        _graph = build_graph()
     return _graph
 
 
@@ -39,7 +55,6 @@ def _error_response(debug: bool):
     return {
         "answer": msg,
         "iter_count": 0,
-        "synth_count": 0,
         "reflection_count": 0,
         "tool_called": False,
         "last_action": "error",
@@ -60,17 +75,25 @@ def ask(
 
     输出：
     - debug=False: 纯文本答案
-    - debug=True: {"answer", "iter_count", "synth_count", "reflection_count", "tool_called", "last_action"}
+    - debug=True: {"answer", "iter_count", "reflection_count", "tool_called", "last_action"}
     """
-    graph = _get_graph()
-    config = {"configurable": {"thread_id": session_id}} if session_id else None
+    config = {"recursion_limit": RECURSION_LIMIT}
+    if session_id:
+        config["configurable"] = {"thread_id": session_id}
 
     logger.info(f"ask() entry: query={question[:50]}... session={session_id}")
 
     try:
         from langchain_core.messages import HumanMessage
+
+        graph = _get_graph()
         result = graph.invoke(
-            {"messages": [HumanMessage(question)]},
+            {
+                "messages": [HumanMessage(question)],
+                # 图级总时限：绝对时间戳，各节点用 is_expired(state) 协作式检查。
+                # 放 state 而不是全局变量 —— state 每次 invoke 天然隔离，不会有并发串味。
+                "deadline": time.time() + TOTAL_TIMEOUT,
+            },
             config=config,
         )
     except Exception as e:
@@ -82,11 +105,10 @@ def ask(
     if not debug:
         return answer
 
-    # debug 模式：返回 6 字段 metadata
+    # debug 模式：返回 5 字段 metadata
     return {
         "answer": answer,
         "iter_count": result.get("iter_count", 0),
-        "synth_count": result.get("synth_count", 0),
         "reflection_count": result.get("reflection_count", 0),
         "tool_called": bool(result.get("tool_status", {})),
         "last_action": result.get("next_action", "end"),

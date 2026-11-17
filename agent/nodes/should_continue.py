@@ -10,9 +10,13 @@ from agent.constants import MAX_ITER
 def should_continue(state: dict) -> str:
     """iter 节点之后的条件路由。
 
-    输入：state dict (含 messages, iter_count)
-    输出："tools" / "synth"
+    输入：state dict (含 messages, iter_count, expired)
+    输出："tools" / "synth" / "__end__"
     """
+    # 图级总时限：已超时直接结束，不再迭代
+    if state.get("expired"):
+        return "__end__"
+
     # 兜底 1：迭代超限强制走 synth（让 reflect 接管，避免再调工具）
     if state.get("iter_count", 0) >= MAX_ITER:
         return "synth"
@@ -33,6 +37,10 @@ def after_reflect(state: dict) -> str:
     输入：state dict (含 next_action)
     输出："__end__" / "synth" / "iter"
     """
+    # 图级总时限：已超时直接结束，不再重写/再迭代
+    if state.get("expired"):
+        return "__end__"
+
     action = state.get("next_action", "end")
     if action == "end":
         return "__end__"

@@ -5,10 +5,12 @@
 - R2: 单文件重建
 - R3: 多知识库切换
 """
+import os
+
 import requests
 import streamlit as st
 
-API_BASE = "http://api:8000"  # docker compose 内；裸跑改 http://localhost:8000
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 def repo_admin_page():

@@ -1,6 +1,10 @@
+import os
+
 import streamlit as st
 from streamlit_extras.bottom_container import bottom
 import requests
+
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 def rag_page():
@@ -35,7 +39,7 @@ def rag_page():
                 # 调用Agent接口（统一入口）
                 try:
                     response = requests.post(
-                        url="http://localhost:8000/agent/chat",
+                        url=f"{API_BASE}/agent/chat",
                         json={"query": query},
                         timeout=60
                     )

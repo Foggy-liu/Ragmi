@@ -5,7 +5,7 @@ v2.2 变化（vs v2.1）：
 - 输出 next_action 字段（end / rewrite / re_iterate）
 - 失败 fallback：next_action = rewrite（reflection_count 上限兜底防死循环）
 - reflection_count >= MAX_REFL → 强制 next_action = end
-- rewrite / re_iterate 时重置 iter_count + synth_count = 0
+- rewrite / re_iterate 时重置 iter_count = 0
 
 think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMessage.content
 自动剥掉 ``<think>...</think>`` 块（推理模型污染防护，让 Pydantic 能解析 JSON）。
@@ -15,10 +15,13 @@ from typing import Literal
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from agent.constants import MAX_REFL
+from agent.constants import LLM_TIMEOUT, MAX_REFL
 from agent.llm_wrapper import ThinkingStripRunnable
+from agent.nodes.material import collect_round_material
+from agent.nodes.status_tool_wrapper import format_tool_status
 from agent.prompts.reflect_prompt import REFLECT_PROMPT
 from agent.state import AgentState
+from agent.timeout import is_expired
 
 
 class ReflectOutput(BaseModel):
@@ -35,14 +38,17 @@ class ReflectOutput(BaseModel):
 
 
 def _get_llm():
-    """懒加载反思 LLM（with_structured_output, 30s 超时 + 剥 think）。"""
+    """懒加载反思 LLM（with_structured_output, LLM_TIMEOUT 超时 + 剥 think）。
+
+    超时用 ChatOpenAI 构造参数（timeout=），不是 .with_config({"timeout": N}）
+    —— 后者 langchain_core 从不读 RunnableConfig["timeout"]，是无效代码。
+    """
     from utils.models.model_setting import LLMmodel
 
-    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash")
+    llm_instance = LLMmodel.create_minimax("MiniMax-M3.1-Flash", timeout=LLM_TIMEOUT)
     return ThinkingStripRunnable(
         llm_instance.chat
         .with_structured_output(ReflectOutput)
-        .with_config({"timeout": 30})
     )
 
 
@@ -63,9 +69,18 @@ def reflect_node(state: AgentState, llm=None) -> dict:
 
     Returns:
         dict 含 "reflection_count" 增量、"next_action"、"last_critique"，
-        以及（rewrite/re_iterate 时）"iter_count" 和 "synth_count" 重置。
+        以及（rewrite/re_iterate 时）"iter_count" 重置。
     """
     reflection_count = state.get("reflection_count") or 0
+
+    # 图级总时限检查：超限了直接 end，不再浪费一次 LLM 调用
+    if is_expired(state):
+        return {
+            "reflection_count": 1,
+            "next_action": "end",
+            "last_critique": state.get("last_critique", ""),
+            "expired": True,
+        }
 
     # 边界：反思超限强制 end（兜底防死循环）
     if reflection_count >= MAX_REFL:
@@ -82,13 +97,15 @@ def reflect_node(state: AgentState, llm=None) -> dict:
     question = state["messages"][0].content if state["messages"] else ""
     latest_answer = _extract_latest_answer(state["messages"])
     tool_status = state.get("tool_status", {})
+    material = collect_round_material(state["messages"])
 
     prompt_messages = [
         SystemMessage(content=REFLECT_PROMPT),
         HumanMessage(content=(
             f"【用户问题】\n{question}\n\n"
             f"【本次答案】\n{latest_answer}\n\n"
-            f"【工具状态】\n{tool_status}\n\n"
+            f"【本轮工具素材】（如果有——用来核对答案是否与资料一致）\n{material or '（无）'}\n\n"
+            f"【工具状态】\n{format_tool_status(tool_status)}\n\n"
             f"【历史反思】（本次会话内）\n{state.get('last_critique', '')}\n"
         )),
     ]
@@ -110,9 +127,8 @@ def reflect_node(state: AgentState, llm=None) -> dict:
         "last_critique": critique,
     }
 
-    # rewrite / re_iterate 时重置 iter_count + synth_count
+    # rewrite / re_iterate 时重置 iter_count
     if action != "end":
         result["iter_count"] = 0
-        result["synth_count"] = 0
 
     return result

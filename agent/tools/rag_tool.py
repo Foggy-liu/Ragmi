@@ -10,6 +10,9 @@
 
 from langchain_core.tools import tool
 
+from agent.constants import TOOL_TIMEOUT
+from agent.errors import AgentTimeoutError, AgentToolError
+from agent.timeout import Timer
 from core.rags.rags import RagModel
 from utils.models.model_manager import ModelManager
 from utils.models.model_setting import LLMmodel
@@ -45,9 +48,17 @@ def rag_search(query: str) -> str:
 
     返回：检索到的原始文档片段（多个片段用 --- 分隔）。
     工具不做最终综合，由 agent 基于这些片段自行作答。
+
+    检索为空时返回空字符串（v2.2）：不塞中文兜底串，否则 status_tool_wrapper
+    永远判成 success，"检索为空"这个信号就丢了。空串由 wrapper 记为 status="empty"，
+    再由 agent 综合节点据此改写答案。
     """
     model = _ensure_rag()
-    chunks = model.retrieve(query, top_k=5)
-    if not chunks:
-        return "（知识库中没有找到相关文档）"
+    try:
+        chunks = Timer(TOOL_TIMEOUT).call(model.retrieve, query, top_k=5)
+    except AgentTimeoutError:
+        raise  # 已是归一化异常，原样上抛
+    except Exception as e:
+        # 底层异常（Milvus/Ollama 的各种错）→ 翻译成归一化异常
+        raise AgentToolError(f"检索失败: {type(e).__name__}: {e}") from e
     return "\n\n---\n\n".join(chunks)

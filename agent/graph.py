@@ -9,11 +9,12 @@
   reflect → {END, synth, iter} (after_reflect)
 """
 from langgraph.graph import END, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from agent.nodes.iter_node import iter_node
 from agent.nodes.reflect_node import reflect_node
 from agent.nodes.should_continue import after_reflect, should_continue
-from agent.nodes.status_tool_node import StatusToolNode
+from agent.nodes.status_tool_wrapper import status_wrapper
 from agent.nodes.synth_node import synth_node
 from agent.state import AgentState
 from agent.tools import ALL_TOOLS
@@ -21,7 +22,7 @@ from agent.tools import ALL_TOOLS
 
 def build_graph():
     """构造 + 编译 LangGraph 图，返回可 invoke 的对象。"""
-    tool_node = StatusToolNode(ALL_TOOLS)
+    tool_node = ToolNode(ALL_TOOLS, wrap_tool_call=status_wrapper)
 
     workflow = StateGraph(AgentState)
 
@@ -34,13 +35,15 @@ def build_graph():
     # 入口
     workflow.set_entry_point("iter")
 
-    # 第一个条件边：iter → {tools, synth}
+    # 第一个条件边：iter → {tools, synth, END}
+    # "__end__" 分支：图级总时限已到，should_continue 直接收摊（不再调工具/不再综合）
     workflow.add_conditional_edges(
         "iter",
         should_continue,
         {
             "tools": "tools",
             "synth": "synth",
+            "__end__": END,
         },
     )
 

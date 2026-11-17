@@ -3,274 +3,454 @@
 [![GitHub stars](https://img.shields.io/github/stars/Foggy-liu/Ragmi)](https://github.com/Foggy-liu/Ragmi)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
-RAGMI 是一个基于检索增强生成（RAG）技术的个人知识库问答系统。系统支持上传多种格式文档，自动解析、切分、向量化存储，并通过大模型结合检索结果生成高质量回答。同时支持纯对话模式和多模型切换，提供完整的前后端分离架构。
+RAGMI 是一个检索增强生成（RAG）+ LangGraph Agent 的个人知识库问答系统。系统支持上传多种格式文档，
+自动解析、切分、向量化存入 Milvus，再由 Agent 决定**要不要检索、检索什么、答案够不够好**，
+最后带着溯源片段生成回答。
 
-## 项目地址
+> 项目的工程重点不在"能不能问答"，而在 **Agent 图的可靠性**：循环边界、超时兜底、工具状态可观测、
+> 失败语义清晰、崩溃不 500。详见 [LangGraph Agent (v2.2)](#langgraph-agent-v22) 与 [技术亮点](#技术亮点)。
 
-**https://github.com/Foggy-liu/Ragmi**
+**项目地址**：https://github.com/Foggy-liu/Ragmi
 
 ---
 
 ## 功能特性
 
-### 多模式对话
+### 三条独立链路
 
-- **纯对话模式**：直接与大模型交互，支持多轮对话和历史管理
-- **RAG 模式**：基于上传文档的知识库问答，检索增强生成
-- Agent 自动判断——无需人工切换模式
+| 入口 | 后端 | 特点 |
+|---|---|---|
+| `/agent/chat` | LangGraph Agent | **默认**。自主决策是否检索，检索后反思答案质量 |
+| `/rag` | 直接 RAG 管线 | 每次必检索，自带会话历史 |
+| `/chat` | 直接 LLM 对话 | 纯闲聊，自带会话历史 |
 
-### LangGraph ReAct Agent (v2.1)
+三条链路各有独立实现，不共用会话状态。
 
-- **LangGraph StateGraph**：agent / tools / reflect 三节点，agent → {tools, reflect, END}，reflect → {agent, END}
-- **Self-Reflection 闭环**（LLM-as-judge）：每轮回答后调反思 LLM 评判质量，不充分时把 critique 作为上下文追加让 agent 重答（最多 1 次）
-- **双计数器保护**：`iterations` (max 5) 控制 agent 总调用次数，`reflection_count` (max 1) 控制反思次数，超限强制兜底放行
-- **3 层 JSON 解析容错**：`json.loads` → 正则提取 `{...}` → fail-safe 默认 insufficient
-- **异常兜底**：`runtime.ask()` 包 `try/except`，LLM 调用失败/超时不会 500，返回结构化错误响应
-- **Debug 元数据**：返回 `{answer, iterations, reflection_count, score, tool_called}` 用于评估和调试
+### LangGraph Agent (v2.2)
+
+单 Agent、多工具、ReAct 循环 + LLM-as-judge 反思。四节点图：
+
+```text
+START → iter
+          ├─ 有 tool_calls → tools → iter        （ReAct 循环，上限 MAX_ITER）
+          └─ 无 tool_call  → synth
+synth → reflect
+reflect
+  ├─ end        → END
+  ├─ rewrite    → synth        （带着 critique 重写）
+  ├─ re_iterate → iter         （换个检索词再来一轮）
+  └─ 超过 MAX_REFL → 强制 END
+```
+
+- **四节点而非三节点**：v2.1 把"决定要不要调工具"和"写最终答案"塞在同一个 agent 节点里，
+  两种 LLM 模式互相干扰。v2.2 拆成 `iter`（纯决策，用 `READY` 信号交接）+ `synth`（纯综合）。
+- **两个独立计数器**：`iter_count`（上限 `MAX_ITER=3`，reflect 重写/重检索时重置）、
+  `reflection_count`（上限 `MAX_REFL=3`，**永不重置**，绝对防死循环）。
+  两个刹车管不同的事，缺一不可。
+- **反思闭环**：`reflect` 节点用 `with_structured_output` 输出结构化决策
+  （`end` / `rewrite` / `re_iterate` + `critique`），不通过就把 critique 喂回 `synth` 重写。
+- **工具状态可观测**：每次工具调用写一条 `{tool, status, code, retryable}`，
+  key 是**调用 id**而非工具名（同一轮模型常并发调同一个工具，按名字做 key 会互相覆盖）。
+- **异常不外泄**：LLM 超时、工具报错、图递归超限，全部兜成可读回复，不返回 HTTP 500。
+- **Debug 元数据**：返回 `{answer, iter_count, reflection_count, tool_called, last_action}`。
+
+详见 [docs/status/项目现状.md](docs/status/项目现状.md)。
+
+### 三层超时机制
+
+职责不重叠的三层，全部配置化（改 `configs/agent_config.yaml` 即可）：
+
+```text
+第 1 层  异常归一化    agent/errors.py
+         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
+
+第 2 层  单次动作超时  agent/timeout.py :: Timer
+         Tool 30s · LLM 30s
+
+第 3 层  整图总时限    state["deadline"] + is_expired()
+         Total 90s，每个节点动手前协作式自检，超时就地收手
+```
 
 ### 多模型支持
 
-- **本地模型**：Ollama（Llama3、Qwen、DeepSeek 等）
-- **云端模型**：阿里云百炼（通义千问系列）、MiniMax
-- 运行时动态切换，无需重启服务
+Ollama（本地）/ 阿里云百炼 / MiniMax / 任意 OpenAI 兼容端点。
+YAML 配置 + `.env` 占位符，运行时 `switch_model()` 动态切换，无需重启服务。
+
+> Agent 三个 LLM 节点**显式指定** `MiniMax-M3.1-Flash`，与全局默认模型解耦——
+> 改 YAML 默认模型不会影响 Agent 走哪个模型。
 
 ### Milvus 向量检索
 
-- 使用 Milvus 作为向量数据库（Docker 部署，不占本地内存）
-- Embedding 模型：bge-large（1024 维向量）
-- 相似度检索 + Top-K 召回，支持增量更新
+Docker 部署，不占本地内存。Embedding 用 `bge-large`（1024 维），余弦相似度 + Top-5 召回。
+索引构建走**时间戳 collection + 别名原子切换**，新旧共存，可回滚。
 
 ### 智能文本切分
 
-- 双阶段切分：LangChain 机械切分 + 智能拼接
-- 小于 80 字符的片段自动向后合并至 300 字符上限
-- 30 字符重叠窗口保留跨 chunk 上下文
+两阶段：LangChain 机械切分（代码里硬编码 `chunk_size=300` / `overlap=30`）→ 小片段智能合并
+（< 80 字符的碎片并入下一块，上限 300 字符），避免语义碎片化。
+
+> ⚠️ `configs/model_config.yaml` 里的 `chunk_size: 280` **从未被读取** —— 切分参数实际写死在
+> `utils/txt_spliter/spliter.py`。改 YAML 不生效。
 
 ---
 
 ## 技术架构
 
-```
+```text
 用户
-  ↓  Streamlit 前端（8501）
+  ↓  Streamlit 前端（8501）—— 三个页面
 FastAPI 后端（8000）
-  ↓
-LangGraph Agent（图编排）
-  ├── agent 节点    (决策: rag vs chat)
-  ├── tools 节点    (rag_search: Milvus 检索 → LLM 生成)
-  └── reflect 节点  (LLM-as-judge: 评判答案质量)
-  ↓
-Milvus (19530) → bge-large → LLM
-Ollama / 阿里云 / MiniMax
+  │
+  ├── /agent/chat ──→ LangGraph Agent 图 ──→ 4 个 LLM 节点 + 4 个工具
+  │                          │
+  │                          └── rag_search → Milvus → bge-large
+  │
+  ├── /rag ──────────→ 检索 + grounded prompt → LLM
+  ├── /chat ─────────→ 纯 LLM 对话
+  └── /api/* ─────────→ 文档上传 → 解析 → 切分 → 向量化 → Milvus
+
+模型平台：Ollama / 阿里云百炼 / MiniMax / OpenAI 兼容
 ```
 
-### 项目目录 (v2.1)
+### 项目目录
 
-```
+```text
 ragmi/
-├── api/                  # FastAPI 接口层
-│   ├── api_agent.py     # /agent/chat 入口
-│   ├── api_chat.py      # 纯对话接口
-│   ├── api_file.py      # 文件上传接口
-│   ├── api_rag.py       # RAG 接口
-│   └── dependencies.py  # 依赖注入
-├── agent/                # Agent 核心（LangGraph）
-│   ├── graph.py         # StateGraph 装配（agent/tools/reflect 三节点）
-│   ├── runtime.py       # 统一入口 ask() + 异常兜底 + Debug 元数据
-│   ├── state.py         # AgentState + MAX_ITERS=5 + MAX_REFL=1
+├── api/                       # FastAPI 接口层
+│   ├── api_agent.py           # /agent/chat
+│   ├── api_chat.py            # /chat
+│   ├── api_rag.py             # /rag
+│   ├── api_file.py            # 挂载在 /api（上传 + 解析）
+│   ├── api_model.py           # 模型切换 / 查询
+│   └── dependencies.py        # 依赖注入
+├── agent/                     # LangGraph Agent 核心
+│   ├── graph.py               # StateGraph 装配（4 节点 + 2 条件边）
+│   ├── runtime.py             # 统一入口 ask() + 异常兜底 + recursion_limit 推导
+│   ├── state.py               # AgentState 9 字段 + 3 个 reducer
+│   ├── constants.py           # 从 YAML 加载 MAX_ITER / MAX_REFL / 超时预算
+│   ├── errors.py              # AgentError / AgentTimeoutError / AgentToolError
+│   ├── timeout.py             # Timer（单次动作超时）+ is_expired（整图时限）
+│   ├── llm_wrapper.py
 │   ├── nodes/
-│   │   ├── agent.py     # agent 节点（决策 + 综合）
-│   │   ├── reflect.py   # 反思节点（LLM-as-judge + 3 层 JSON 容错）
-│   │   └── should_continue.py  # 条件边路由
-│   ├── tools/
-│   │   └── rag_tool.py  # rag_search 工具（Milvus 检索 + LLM 生成）
-│   └── prompts/
-│       ├── system_prompt.py    # Agent 主提示词
-│       └── reflect_prompt.py   # 反思评判提示词
+│   │   ├── iter_node.py       # 决策：要不要调工具
+│   │   ├── synth_node.py      # 综合：把素材写成答案
+│   │   ├── reflect_node.py    # 反思：end / rewrite / re_iterate
+│   │   ├── should_continue.py # 2 个条件边函数
+│   │   ├── material.py        # collect_round_material()：统一取本轮素材
+│   │   └── status_tool_wrapper.py  # 官方 wrap_tool_call 钩子：写 tool_status
+│   ├── tools/                 # rag_search / calculator / weather / web_search
+│   └── prompts/               # iter / synth / reflect / system 四套提示词
 ├── core/
-│   ├── chat/            # 纯对话业务
-│   └── rags/            # RAG 业务（Milvus 检索 + bge-large）
+│   ├── chat/chat.py           # 直接对话业务
+│   └── rags/rags.py           # RAG 业务（Milvus 检索 + grounded prompt）
 ├── utils/
-│   ├── docs/           # 文档解析
-│   ├── models/         # 模型管理（Ollama/阿里云/MiniMax）
-│   ├── txt_spliter/    # 文本切分 + Milvus 索引构建
-│   └── message/        # 会话管理
-├── test/                # 评估与测试
-│   ├── agent_test_cases.json   # 12 个评估 case (T01-T12)
-│   ├── run_agent_eval.py       # 离线评估入口（agent_eval_results.json）
-│   ├── test_reflect.py         # 反思节点单元测试
-│   └── langsmith_*.py          # LangSmith 集成（setup/evaluators/eval）
-├── configs/            # 配置文件
-├── docs/superpowers/   # 设计文档 + 实施计划
-├── docker-compose.yml  # Docker 部署
-└── requirements.txt    # 依赖列表
+│   ├── docs/                  # 文档扫描 / 清洗 / 解析（md / pdf / word）
+│   ├── models/                # 模型管理 + embedding
+│   ├── message/               # 会话历史
+│   ├── txt_spliter/           # 切分 + vector_main.py（建索引 + 别名切换）
+│   └── logging.py
+├── web_page/                  # Streamlit 三个页面
+├── test/
+│   ├── test_agent_timeout.py      # 超时与异常机制（11 用例）
+│   ├── test_main_routes_covered.py # 路由挂载回归（AST 扫描）
+│   ├── test_agent_flow.py         # L2 Agent 流程层（假 LLM + 假检索）
+│   ├── test_api_contract.py       # L3 API 契约层（TestClient）
+│   ├── test_splitter.py           # L2 切分层（纯函数）
+│   ├── test_eval_smoke.py         # L4 真环境冒烟（slow）
+│   ├── test_vector_split.py       # vector_split() 端到端（slow）
+│   ├── conftest.py + helpers.py + fake_backend.py  # 公共工具层（假 LLM/假检索/假后端）
+│   ├── e2e/                       # L4 浏览器层（Playwright，标 e2e）
+│   ├── probes/                   # 手动探针脚本（非 pytest）
+│   └── archive/                  # 过时测试脚本的只读归档（scripts/ + data/）
+├── configs/
+│   ├── agent_config.yaml      # MAX_ITER / MAX_REFL / timeout.{llm,tool,total}
+│   └── model_config.yaml      # 平台 / 模型默认值 / 切分 / Milvus
+├── docs/                      # 设计与笔记（详见 docs/README.md）
+├── main.py                    # FastAPI 入口
+├── main_web.py                # Streamlit 入口
+├── docker-compose.yml
+└── requirements.txt
 ```
 
 ---
 
 ## 快速开始
 
-### 环境要求
+**环境要求**：Python 3.11+ · Docker + Docker Compose ·（可选）Ollama
 
-- Python 3.11+
-- Docker + Docker Compose
-- 可选：Ollama（本地模型）
+### 1. 启动 Milvus
 
-### 1. 启动 Milvus 向量数据库
-
-```bash
-docker-compose -f docker-compose-milvus.yml up -d
-```
-
-等待约 90 秒后验证：
+Milvus 服务已经写在 `docker-compose.yml` 里（`milvusdb/milvus:standalone`），
+**没有单独的 `docker-compose-milvus.yml` 文件**：
 
 ```bash
+docker-compose up -d milvus
+# Milvus 需要约 90 秒才健康
 curl http://localhost:9091/healthz
 ```
 
-### 2. 安装依赖
+### 2. 安装依赖 + 配置环境变量
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 3. 配置环境变量
-
-```bash
 cp .env.example .env
 # 编辑 .env，填入 API 密钥
 ```
 
-关键配置项：
 ```bash
-# 阿里云（通义千问）
-ALIYUN_API_KEY=your_key
-ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-
 # MiniMax
 MINIMAX_API_KEY=your_key
 MINIMAX_BASE_URL=https://api.minimax.com/v1
-
+# 阿里云百炼
+ALIYUN_API_KEY=your_key
+ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 # Milvus
 MILVUS_HOST=127.0.0.1
 MILVUS_PORT=19530
 ```
 
-### 4. 向量化文档
+### 3. 向量化文档
 
 ```bash
-cd utils/txt_spliter
-python vector_main.py
+python utils/txt_spliter/vector_main.py
 ```
 
-### 5. 启动服务
+解析后的文件放 `txt/`，原始文件放 `documents/`。脚本会建时间戳 collection → 灌数据 → 建索引 →
+**原子切换别名**，旧 collection 保留以便回滚。
+
+### 4. 启动服务
 
 ```bash
-# 终端1：FastAPI 后端
+# 终端 1：FastAPI 后端
 python main.py
-
-# 终端2：Streamlit 前端
+# 终端 2：Streamlit 前端
 streamlit run main_web.py
 ```
 
-打开 http://localhost:8501 即可使用。
+打开 http://localhost:8501。后端健康检查：`curl http://localhost:8000/debug/simple`。
 
 ---
 
-## Docker 部署（推荐）
-
-### 方式一：一键部署（同时启动 App + Milvus）
+## Docker 部署
 
 ```bash
+# 一键：App + Milvus（3 个服务）
 docker-compose up -d
+
+# 或分开
+docker-compose up -d milvus    # Milvus（健康检查约 90 秒）
+docker-compose up -d app       # App
 ```
 
-### 方式二：分别启动
-
-```bash
-# 终端1：启动 Milvus
-docker-compose -f docker-compose-milvus.yml up -d
-
-# 终端2：启动 App
-docker-compose up -d app
-```
+> ⚠️ `api` 服务用 `build`（代码烤进镜像），改代码后不 rebuild 不生效；
+> `web` 服务是 bind-mount，改完立即生效。
 
 ---
 
 ## 技术亮点
 
-### Self-Reflection 闭环（v2.1）
+### 1. 图的循环预算被显式推导，而不是靠运气
 
-LLM-as-judge 模式：每轮回答后调反思 LLM 评判 `is_sufficient` + `critique`，不通过时把 critique 作为 AIMessage 追加让 agent 重答。3 层 JSON 解析容错（`json.loads` → 正则提取 `{...}` → fail-safe 默认 insufficient），`_to_bool()` 处理 LLM 返回字符串 `'false'` 的情况。
+LangGraph 默认 `recursion_limit=25`。v2.2 的两个计数器**单独看都安全，叠起来会超**：
 
-### 双计数器兜底
+- 一轮 `re_iterate` = `iter/tools` 交替最多 `2*MAX_ITER` 步 + `synth` + `reflect` = **8 步**
+- `reflect` 最多被调用 `MAX_REFL+1 = 4` 次
+- 最坏 = 8 × 4 = **32 步 > 25** → `GraphRecursionError`，被 `ask()` 的 except 吞成"agent 调用异常"
 
-`iterations` (max 5) 控制 agent 节点总调用次数，`reflection_count` (max 1) 控制反思节点调用次数。两个 reducer 都是 `Annotated[int, _increment]`，节点返回 1 即可自动累加。超限在 `should_continue` 和 `reflect_node` 短路强制放行，避免无限循环。
+修法不是写死数字，而是**从常量推导**：
 
-### LangSmith 离线评估
+```python
+_STEPS_PER_ROUND = 2 * MAX_ITER + 2
+RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10   # = 42
+```
 
-`test/langsmith_setup.py` 建 Dataset（12 个 case）→ `test/langsmith_evaluators.py` 提供两个 evaluator（`tool_choice_evaluator` + `answer_keyword_evaluator`）→ `test/langsmith_eval.py --prefix <name>` 上传实验。在 [smith.langchain.com](https://smith.langchain.com) 查看 trace + 评分。
+以后改 `MAX_ITER` / `MAX_REFL` 不会再撞默认上限。
 
-### 超时控制 + 异常兜底
+### 2. 用官方钩子而不是继承改内部方法
 
-agent 节点 `.with_config({"timeout": 30})`；`runtime.ask()` 包 `try/except`，LLM 调用失败不会 500，统一返回结构化错误响应。Debug 模式返回 `{iterations, reflection_count, score, tool_called}` 用于评估和调试。
+工具状态需要拦截每次调用。**继承 `ToolNode` 重写 `__call__` 是死代码**——
+LangGraph 走 `node.invoke()` → `self.func`，子类重写的 `__call__` 永远不执行。
+正解是框架提供的官方拦截点：
 
-### 多模型统一封装
+```python
+tool_node = ToolNode(ALL_TOOLS, wrap_tool_call=status_wrapper)
+```
 
-通过 YAML 配置 + `.env` 占位符替换，实现 Ollama（本地）/ MiniMax / 阿里云三平台统一接口。运行时 `switch_model()` 动态切换，参数优先级：自定义 > 模型默认 > 平台默认。
+不继承、不碰内部实现、不受参数名约束，返回 `Command(update=...)` 就能写任意 state 字段。
 
-### 两阶段文本切分
+### 3. 工具状态按调用 id 存，不按工具名存
 
-先用 `RecursiveCharacterTextSplitter` 按 `\n\n|\n|。|；|，` 机械切分，再将小于 80 字符的小片段智能合并至 300 字符上限，避免语义碎片化。
+同一轮里 MiniMax 常并发调 2~3 个 `rag_search`。按工具名做 key，后一次调用会**覆盖**前一次的状态
+（实测：成功的那条被 timeout 冲掉）。改用模型生成的调用 id 后，实测 5 次调用 → 5 条状态。
+
+失败时 ToolMessage 的内容是**结构化 JSON 载荷**，不是中文散文：
+
+```json
+{"code": "TOOL_TIMEOUT", "status": "timeout", "retryable": true, "message": "调用超时：..."}
+```
+
+成功时内容保持原样（原始检索片段），不做包装——最终答案由 Agent 的 LLM 综合。
+
+### 4. 超时是三层协作，不是一层硬杀
+
+- **异常归一化只做一次**，在工具内部翻译成自家异常，下游不再重复翻译
+- **Python 杀不掉线程**（没有 `Thread.terminate()`），超时只能"不再等"，底层线程仍会跑完并占连接
+  → 不用"外层包 `graph.invoke`"的写法（会留僵尸线程），而是**协作式**：每个节点动手前自检 `deadline`
+- **`deadline` 放 state 不放全局变量**：state 每次 invoke 天然隔离，并发请求不串味
+- **`.with_config({"timeout": N})` 是死代码**——`langchain_core` 全包从不读 `RunnableConfig["timeout"]`，
+  超时只能在**构造时**传：`ChatOpenAI(..., timeout=30)`
+
+### 5. 工具调用不悬空
+
+LangGraph 的 `should_continue` 若在 `iter_count >= MAX_ITER` 时**先**判上限就返回，
+第 3 轮决策发出的 `tool_calls` 永远不会被执行 → 留下"有 tool_calls 但没 ToolMessage"的 AIMessage。
+MiniMax 收到这种消息会直接 **HTTP 400**（`invalid params, tool call and result not match`）。
+
+修法是把边界判断改成 `iter_count + 1 >= MAX_ITER`——`iter_count` 是"已跑过几次"，
+本次调用之后才达到上限。改完实测悬空数 **2/7 → 0/5**，顺带省掉一次白跑的 LLM 调用。
+
+### 6. 路由挂载回归测试
+
+用 AST 扫描 `api/*.py` + `main.py`，自动检测"写了路由模块但忘了挂载"的死代码。
+历史教训：曾经的 `/vector` 接口就是这么消失的（404 才发现）。见 `test/test_main_routes_covered.py`。
 
 ---
 
 ## 评估结果
 
-12 个 case 在 MiniMax-M3 + Milvus 实测：
+> **诚实说明**：12-case 评估集本身是 v1 时代设计（`expected_tool` 只有 chat/rag 二值，
+> 没跟上 v2.2 的 4 个工具），归档在 `test/archive/data/`。
+> 2026-11-15 用它**实跑了一遍 v2.2**，结果如下 —— 评估集口径待修，但数字是真的。
 
-| 指标 | v2 baseline | v2.1 (with Reflection) |
-|------|-------------|------------------------|
-| 总准确率 | 92% | 91.7% (持平) |
-| RAG 类 | 80% | 80% (4/5) |
-| Chat 类 | 100% | 100% (7/7) |
-| 反思触发率 | 0 | 1 次/case (T09 触发 2 次) |
-| 最大 iterations | 1 | 5 (T11 简历) |
+历史数据（MiniMax + Milvus 实测）：
 
-**结论**：反思没提升准确率（T06 "RAG 的核心定义" 路由错误无法事后修复），但增加了可观测性（`iterations` + `reflection_count`）。
+| 指标 | v1 baseline | v2 baseline | v2.1 (with Reflection) | **v2.2（2026-11-15 实测）** |
+|------|------------|-------------|------------------------|---------------------------|
+| 总准确率 | 75% | 92% | 91.7%（持平） | **83.3%**（脚本口径 66.7%） |
+| RAG 类 | — | 80% | 80% (4/5) | — |
+| Chat 类 | — | 100% | 100% (7/7) | — |
+| 反思触发率 | 0 | 0 | 1 次/case | 1 次/case |
+| **稳定性（0 异常）** | — | — | — | **12/12 = 100%** |
 
-跑评估：
+**v2.2 的 66.7% 是脚本口径失真**：脚本把"调了任何工具"都记成 `rag`，而 T02 实际调的是
+`calculator`、T09 实际调的是 `weather` —— **路由是对的**，被误判成错。逐 case 复查后
+真正错的只有 2 个：
 
-```bash
-PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py
-PYTHONIOENCODING=utf-8 python test/langsmith_eval.py --prefix v2.1-reflection
-```
+| Case | 期望 | 实际 | 真实结论 |
+|---|---|---|---|
+| T02 `1+1等于多少` | chat | `calculator` | ✅ 判错，实为正确路由 |
+| T09 `上海今天天气怎么样` | chat | `weather` | ✅ 判错，实为正确路由 |
+| T06 `RAG 的核心定义是什么` | rag | 无工具 | ❌ 真错：该检索却没检索 |
+| T10 `介绍下 LangGraph` | chat | `rag_search` ×3 | ❌ 真错：不该检索却检索 3 轮，`iter_count` 打满上限，单 case 耗时 106 秒 |
+
+**结论（与 v2.1 同一个诚实结论）**：反思机制**不提升路由准确率**，T06 这类路由错误事后修不了。
+v2.2 的价值在别处 —— 稳定性从"会抛异常"变成 12/12 零异常、`tool_calls` 悬空从 2/7 降到 0、
+工具状态可观测。**这个诚实结论比一个好看的数字更有价值**——它证明了反思的边界在哪。
 
 ---
 
 ## 运行测试
 
-项目用 pytest + 自研 eval 脚本 + Makefile 入口管理测试：
-
 ```bash
-# 单元测试 + mock 评估（不需要真实 LLM key）
-make test
-
-# 或分别跑
-make test-unit      # 10 个 parse_reflection_json + reflect_node 用例
-make test-mock      # 12 个 agent 用例，reflect 用 MockLLM，agent 仍用真实 LLM
-make test-eval      # 真实 LLM 全量评估（需要 .env 配 API key）
-make clean          # 清 __pycache__ + .pytest_cache
+pytest -m "not slow and not e2e" -v   # 快回归（秒级，不连 Milvus、不调真 LLM、不开浏览器）
+pytest -m e2e -v --tracing=retain-on-failure   # 浏览器层（Playwright + 专用 Streamlit:8511）
+pytest -m slow -v                     # 真环境（真 MiniMax + 真 Milvus，慢且花钱）
+pytest -v                             # 全量（66 个收集项）
 ```
 
-测试入口：
+**4 层测试体系**（2026-11-16 落地）。详见 [`docs/status/测试体系.md`](./docs/status/测试体系.md)。
 
-- `pytest test/test_reflect.py -v` — 纯逻辑单元（10 用例，< 2 秒）
-- `python test/test_reflection_count.py` — MAX_REFL=1 边界行为（2 场景）
-- `python test/run_agent_eval.py [--mock]` — agent 路由评估，输出 `test/agent_eval_results.json`
+| 层 | 文件 | 测什么 | 条数 | 实测 |
+|---|---|---|---|---|
+| L2 流程 | `test/test_agent_flow.py` | 跑**真的 LangGraph 图**（假 LLM 剧本 + 假检索）：工具 4 态、两个循环刹车、三种超时时机、`ask()` 契约 | 11（+9 参数化不变式） | 24 passed / 1 xfailed |
+| L3 契约 | `test/test_api_contract.py` | `TestClient`：接口字段形状、缺字段 422、模型切换、上传路径穿越 / 类型白名单 / 同名覆盖 | 10 | 10 passed |
+| L2 切分 | `test/test_splitter.py` | 纯函数切分：无内容丢失、块长上限 | 5 | 4 passed / 1 xfailed |
+| L4 浏览器 | `test/e2e/test_browser_e2e.py` | 进程外假后端 + 专用 Streamlit：发问 / 清空 / 上传统计 / 三页互切 / 后端 500 | 8 | 7 passed / 1 xfailed |
+| L4 冒烟 | `test/test_eval_smoke.py` | 真 MiniMax + 真 Milvus：算式必调工具、检索路由、工具失败不失控 | 4 | 4 passed（162 秒） |
+| 既有 | `test/test_agent_timeout.py` + `test_main_routes_covered.py` | 工具状态 4 态 / Timer / deadline / 路由挂载 | 13 | 13 passed |
+| 既有（慢） | `test/test_vector_split.py` | 摄取全链路 → 原子切 alias | 1 | passed（25 分 29 秒） |
 
-当前 mock 模式基线：**11/12 = 91.7% routing accuracy, 12/12 = 100% stability**
-（T06 "RAG 的核心定义" 唯一错例，真实 LLM 判为通用概念问答而非"查我文档"）
+**3 个 `xfailed` 是有意为之的"债务可视化"**（`strict=True` —— 修好了反而报失败，提醒摘标记）：
+F9a_x（超时兜底把内部占位当答案）、S5（`Splitter(max_chars)` 没生效，**P1-7**）、E4（**P1-1** `/rag` 字段名不匹配）。
+
+**仍然没覆盖的**（别把绿色当成质量保证）：
+
+- **reflect prompt 的"工具失败时不判 `re_iterate`"硬约束** —— 假 reflect 被剧本编排，原理上测不到。
+- **评估集口径过时** —— 12-case 评估集的 `expected_tool` 是二值的，跟不上 v2.2 的 4 个工具。
+- **真实检索链路**只有 `test_vector_split.py` 那条 25 分钟的慢用例碰到。
+
+### 既有快回归用例具体测什么
+
+（不连 Milvus、不调真实 LLM，全部是纯逻辑 / AST 静态检查）
+
+`test/test_agent_timeout.py` —— 11 个：
+
+| # | 用例 | 测什么 |
+|---|---|---|
+| 1 | `test_tool_status_success` | 工具返回非空 → `status=success` / `code=OK`，且原始内容透传不包装 |
+| 2 | `test_tool_status_empty` | 工具返回空串 → `status=empty` / `EMPTY_RESULT`（**不是** success） |
+| 3 | `test_tool_status_timeout` | 抛 `AgentTimeoutError` → `status=timeout` / `retryable=true`，**且必须回写 ToolMessage**（漏写会让 MiniMax 报 400），载荷是结构化 JSON |
+| 4 | `test_tool_status_error` | 抛 `AgentToolError` → `status=error` / `retryable=false` |
+| 5 | `test_timer_turns_slow_call_into_agent_timeout` | `Timer` 超时抛的是 `AgentTimeoutError`，**不是**裸 `TimeoutError`（真实第三方超时异常没有一个继承它） |
+| 6 | `test_timer_passes_through_normal_result` | 正常返回时 Timer 不改变结果 |
+| 7 | `test_is_expired_uses_deadline` | `deadline` 是绝对时间戳；过期 / 未过期 / 没设 deadline 三种情况 |
+| 8 | `test_synth_expired_returns_previous_answer` | 超时时交出 `state["last_answer"]`，**不是**从 messages 里倒着找 AIMessage（那会拿到 `"READY"` 占位消息） |
+| 9 | `test_synth_expired_without_previous_answer` | 第一次就超时、没旧答案 → 明确说超时，不留空 |
+| 10 | `test_expired_state_routes_to_end` | `expired=True` 时 `should_continue` 和 `after_reflect` **都**返回 `"__end__"` |
+| 11 | `test_agent_chat_endpoint_is_not_async` | AST 检查 `agent_chat` 不是 `async def`（同步阻塞写在 `async def` 里会占死事件循环） |
+
+`test/test_main_routes_covered.py` —— 2 个：
+
+| # | 用例 | 测什么 |
+|---|---|---|
+| 12 | `test_every_router_is_imported_and_mounted` | `api/*.py` 里每个 `APIRouter()` / `FastAPI()` 都必须被 `main.py` import **且** `include_router`/`mount`（防 `/vector` 那种 404 死代码） |
+| 13 | `test_no_orphan_router_import` | 反向检查：没有"import 了却不挂载"的孤儿 router |
+
+**这 13 个用例没有覆盖什么**（别当成质量保证）：
+
+- **Agent 图的路由逻辑** —— 已由 `test/test_agent_flow.py` 的 11 条 + 公共不变式补上，
+  但它们跑的是**假 LLM**；真实模型的路由决策由 `test_eval_smoke.py`（slow）抽查。
+- **评估集口径过时** —— 12-case 评估集的 `expected_tool` 是二值的，跟不上 v2.2 的 4 个工具。
+
+### 端到端用例（慢，验收用）
+
+| 用例 | 测什么 | 实测结果 |
+|---|---|---|
+| `test/test_vector_split.py` | 摄取全链路：切分 → embed → 建带时间戳集合 → 插入 → 建索引 → 加载 → **原子切 alias** | ✅ **passed，耗时 25 分 29 秒**（1667 个片段重新 embed） |
+
+> 这个用例每次跑都要把 `txt/` 下 22 个文件重新切 1667 块并**全量重新 embed**
+> （bge-large，1024 维，CPU；单批 32 块 ≈ 18 秒）。它是**改了摄取链路后跑一次**的验收用例，
+> 不该混在 `pytest` 默认流程里 —— 已标 `@pytest.mark.slow`，默认快回归会跳过它。
+
+### 手动探针与归档
+
+`test/probes/` 是**手动探针脚本**，文件名不匹配 `python_files = test_*.py`，pytest 不收集，
+需从仓库根目录直接运行。它们记录了 `tool_calls` 悬空 / `tool_status` 覆盖的实测过程。
+探针发现的两个 bug 已转成 pytest 用例（`test_agent_flow.py` 的 F1b + 公共不变式）。
+
+`test/archive/` 是**过时测试脚本的只读归档**（`pytest.ini` 设了 `norecursedirs = archive probes`，
+永不收集），内部分 `scripts/`（v1/v2.1 脚本）与 `data/`（历史跑分快照），说明见
+[`test/archive/README.md`](./test/archive/README.md)。
+
+**每个文件的分类、测什么、实测结果** —— 见 [`test/README.md`](./test/README.md)。
+
+---
+
+## 已知限制
+
+诚实列出当前**没做**或**做得不精确**的部分：
+
+- **Agent 没有多轮记忆**：图没有 checkpointer，`thread_id` 传了但没人读。
+  三个 LLM 节点也从不把 `state["messages"]` 发给 LLM（每次从零拼 prompt）。
+  补记忆前要先处理 iter 的占位消息（`"READY"` 等），它们会一起进历史。
+- **`empty` 状态语义不精确**：`core/rags/rags.py` 的 `retrieve()` 用 `except Exception: return []`，
+  工具侧区分不了"检索为空"和"检索失败"。修它会连带改 `/rag` 路径行为。
+- **Ollama embedding 调用不限时**：`OllamaEmbeddings` 没传 timeout。工具外层的 `Timer` 兜住了
+  "图不再卡死"，但底层连接本身仍无界。
+- **索引与检索用不同客户端**：`vector_main.py` 直连 Ollama HTTP，
+  查询侧 `core/rags/rags.py` 用 `langchain_ollama`——同一个 embedding 模型，两条路径。
+- **CORS 放开所有源**：开发期便利，生产部署应改成白名单。
+- **没有评估集**：见上文"评估结果"。**建 eval 集要先于做多轮记忆**，否则记忆做完了也不知道有没有变好。
 
 ---
 
@@ -278,14 +458,15 @@ make clean          # 清 __pycache__ + .pytest_cache
 
 - [x] Milvus 向量库替换 ChromaDB
 - [x] Docker 容器化部署
-- [x] Self-Reflection 闭环
-- [x] LangSmith 离线评估
-- [ ] 工具路由优化（修 T06 "RAG 的核心定义" 类问题）
-- [ ] Faithfulness 评估（检查 RAG 答案是否真的用了检索片段）
-- [ ] v2.2 会话管理 / 多轮记忆
+- [x] Self-Reflection 闭环（v2.1）
+- [x] Agent 图重构：四节点 + 双计数器（v2.2）
+- [x] 三层超时机制 + 异常归一化
+- [x] 工具状态结构化 + 悬空修复
+- [ ] **重建评估集**（当前第一优先级）
+- [ ] 多轮记忆（LangGraph checkpointer）—— 需先修 iter 占位消息
+- [ ] `retrieve()` 契约拆分：区分"空结果"与"检索失败"
 - [ ] 混合检索（向量 + BM25）
 - [ ] 用户认证与权限管理
-- [ ] 文档版本管理
 
 ---
 
