@@ -43,10 +43,13 @@ utils/docs/process/*.txt
 .DS_Store
 Thumbs.db
 
-# 整个 docs/ 是私人参考文档（本地保留阅读，不上传仓），但 superpowers 流程产物除外
+# 整个 docs/ 是私人参考文档（本地保留阅读，不上传仓），但 plan/ 与 status/ 是流程产物与现状快照
 docs/*
-!docs/superpowers/
-!docs/superpowers/**
+!docs/README.md
+!docs/plan/
+!docs/plan/**
+!docs/status/
+!docs/status/**
 
 # txt/ 和 documents/ 内容不上传（运行时生成/用户文件），但空目录本身是程序必需的
 txt/*
@@ -57,6 +60,8 @@ documents/*
 # Claude 工具链配置与本地会话记忆（不是项目代码）
 .claude/
 memory/
+# RULE.md 是本地协作规则（由两个 memory 文件夹整合而来），不上传仓
+RULE.md
 
 # Docker volumes 数据（Milvus/etcd/minio 持久化数据）
 volumes/
@@ -67,5 +72,9 @@ volumes/
 # understand-anything 工具生成的中间产物（可重新生成）
 .understand-anything/
 
-# Test fixtures (runtime test data)
-test/fixtures/
+# Test fixtures (runtime test data) —— 只放行 sample.txt（被 plan 文档的 curl 上传命令引用）
+test/fixtures/*
+!test/fixtures/sample.txt
+
+# E2E 运行产物（截图 + 报告），本地看就行，不进仓
+test/e2e/_artifacts/
