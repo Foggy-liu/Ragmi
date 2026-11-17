@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Read First
+
+Before doing anything else in this repo, read these in order:
+
+1. `RULE.md` (repo root, local-only) — project constitution: collaboration rules (§A), background
+   (§B), v1 → v2.2 evolution history (§C), and 24 engineering rules distilled from bugs already hit
+   (§D). It supersedes any older memory file.
+2. `docs/status/项目现状.md` — **the single source of truth for the current state**. §8 is a
+   prioritized issue list (P0–P3) with file paths and line numbers; start work from there.
+3. `docs/status/测试现状.md` — only when the task touches tests: what each script under `test/`
+   actually measures and its measured result.
+4. `docs/status/项目优化.md` — what each past change did and what it left behind.
+
+Ground every statement in the code, not in prose: `docs/plan/`, `docs/note/`, `docs/archive/`, and
+`test/archive/` describe earlier versions and are stale in places. Do not quote them as current fact.
+
+After reading, state briefly what the project is and which `§8` P-item you are picking up, then
+proceed. Keep `docs/status/项目现状.md` in sync with the code whenever `agent/` behavior changes.
+
 ## Project Overview
 
 RAGMI is a Python 3.11+ personal knowledge-base Q&A application. It combines a Streamlit frontend, FastAPI backend, LangGraph Agent, direct chat/RAG endpoints, document ingestion, Ollama embeddings, and Milvus vector search.
@@ -23,8 +42,9 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # Start Milvus
-# The README notes that Milvus may need about 90 seconds before it is healthy.
-docker-compose -f docker-compose-milvus.yml up -d
+# The milvus service lives in docker-compose.yml — there is no separate docker-compose-milvus.yml.
+# Milvus may need about 90 seconds before it is healthy.
+docker-compose up -d milvus
 curl http://localhost:9091/healthz
 
 # Parse and vectorize documents into a fresh Milvus collection, then atomically move the configured alias.
@@ -45,34 +65,62 @@ curl http://localhost:8000/debug/simple
 ### Tests and evaluation
 
 ```bash
-# Unit tests plus mock-mode Agent evaluation
-make test
+# Fast regression (seconds; no browser, no real LLM)
+pytest -m "not slow and not e2e" -v
 
-# Reflection unit tests only
-make test-unit
+# Browser E2E (keeps trace/video on failure)
+pytest -m e2e -v --tracing=retain-on-failure
 
-# Agent evaluation in mock mode
-make test-mock
+# Real-environment smoke (slow, costs money)
+pytest -m slow -v
 
-# Agent evaluation with the configured real model/API
-make test-eval
+# Everything
+pytest -v
 
-# Entire pytest-discovered suite
-pytest
-
-# One test file
-pytest test/test_reflect.py -v
-
-# One test function
-pytest test/test_reflect.py::test_name -v
-
-# Router-mount regression test
-pytest test/test_main_routes_covered.py -v
-
-# Direct evaluation commands
-PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py --mock
-PYTHONIOENCODING=utf-8 PYTHONPATH=. python test/run_agent_eval.py
+# One test file / one test function
+pytest test/test_agent_flow.py -v
+pytest test/test_agent_flow.py::test_name -v
 ```
+
+`test/archive/` holds the archived v2.1 evaluation scripts (`scripts/run_agent_eval.py` etc.) and the
+historical score snapshots (`data/*.json`). `pytest.ini` sets `norecursedirs = archive probes` so
+they are never collected. Their actual run status was measured on 2026-11-15: `run_agent_eval.py`
+**does** still run in real-LLM mode (it needs `PYTHONPATH` pointed at the repo root, because
+`Path(__file__).parent.parent` now resolves to `test/archive/` instead of the repo root) — only
+its `--mock` branch is broken. `run_v1_baseline.py` runs but **overwrites
+`data/v1_baseline_results.json` with 0/12 when the backend is down**. `retry_failed_cases.py`
+merely re-prints cached numbers. See `test/archive/README.md`.
+
+Currently live test files:
+
+- `test/test_agent_timeout.py` — timeout/exception mechanism (11 cases, no Milvus or LLM needed).
+- `test/test_main_routes_covered.py` — AST scan of `api/*.py` + `main.py`, prevents unmounted router dead code (2 cases).
+- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (11 cases + a parametrized "no dangling tool_calls" invariant).
+- `test/test_api_contract.py` — **L3 API contract layer**: `TestClient` + `dependency_overrides`. Field shapes, missing-field 422, model switching, and the upload validation logic (path traversal / type whitelist / same-name skip-or-overwrite) (10 cases).
+- `test/test_splitter.py` — pure-function splitter checks (5 cases, always run).
+- `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks). Marked `@pytest.mark.slow` — excluded from the default fast run.
+- `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
+- `test/e2e/test_browser_e2e.py` — Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**).
+- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s; it confirms the known P1-1 defect on the 知识库问答 page.
+
+The four-layer system is documented in `docs/status/测试体系.md`; its design is
+`docs/plan/2026-11-16-test-suite-design.md`.
+
+**Coverage gap to keep in mind**: the fast suite now *does* run `graph.invoke()` — the Agent's
+non-timeout routing branches, counter-reset semantics, and reflect decisions have 11 pytest
+cases in `test/test_agent_flow.py`, plus a parametrized regression net asserting
+"dangling `tool_calls` == 0". What is **not** covered: the reflect prompt's hard constraint
+("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
+it, and the only real-LLM probe (S4) is inherently flaky. See `docs/status/测试体系.md` §6.
+
+`test/probes/` holds manual verification scripts (`probe_*.py`). They are not pytest cases — the
+filename pattern does not match `python_files = test_*.py`, so pytest never collects them. Run them
+directly from the repo root. They document the `tool_calls` dangling / `tool_status` overwrite
+findings; see `test/probes/README.md`. Both findings are now covered by pytest cases
+(`test/test_agent_flow.py` F1b + the parametrized "no dangling tool_calls" invariant).
+
+`test/README.md` is the per-file index: what each script tests, its measured result, and what
+the suite does *not* cover. Read it before adding or running anything under `test/`.
 
 There is no configured lint or build command. `pytest.ini` discovers `test/test_*.py`; not every script under `test/` is a pytest test.
 
@@ -112,22 +160,22 @@ The Agent path is intentionally decoupled from `app.state.model_manager`:
 
 ## LangGraph Agent (v2.2)
 
-The Agent is a single-Agent, multi-tool ReAct-style graph with an LLM-as-judge reflection step. v2.2 替换 v2.1 解决 3 个 bug：节点层双角色 / counter 混叠 / 工具超时死循环。
+The Agent is a single-Agent, multi-tool ReAct-style graph with an LLM-as-judge reflection step. v2.2 replaced v2.1 to fix three bugs: the dual-role node, mixed-up counters, and the tool-timeout deadlock.
 
 ```text
 START → iter
           ├─ tool_calls present → tools → iter (loop)
           └─ no tool call (incl. "READY" / 乱码 / iter_count ≥ MAX_ITER) → synth
 
-synth
-  ├─ synth_count < MAX_SYNTH → 写答案 → reflect
-  └─ synth_count ≥ MAX_SYNTH → 强制 END
+synth → reflect
 
 reflect
   ├─ end → END
-  ├─ rewrite → synth（synth_count 已重置）
+  ├─ rewrite → synth（iter_count 已重置）
   ├─ re_iterate → iter（iter_count 已重置）
   └─ reflection_count ≥ MAX_REFL → 强制 end（兜底防死循环）
+
+两条条件边在 expired=True 时都直接走 "__end__"（见「超时机制」）。
 ```
 
 ### 4 节点 vs v2.1 3 节点
@@ -138,32 +186,93 @@ v2.2 节点：`iter`（纯决策，不写答案）/ `tools` / `synth`（综合�
 
 分离原因：v2.1 agent_node 同时承担"决定要不要调工具"和"写最终答案"两种 LLM 模式，互相干扰。v2.2 拆为 2 个节点 + `iter` 用 `READY` 信号交接。
 
-### 3 counter vs v2.1 单 counter
+### 2 counter vs v2.1 单 counter
 
 v2.1：`iterations`（单计数器，混叠 agent_node 决策+综合次数，导致反思触发条件短路）
 
-v2.2：`iter_count` / `synth_count` / `reflection_count` 三个独立计数器，各管自己的节点：
+v2.2：两个独立计数器，各管自己的节点（`synth_count` / `MAX_SYNTH` 已删除 —— 职责转移给 reflect 节点后它成了不可达的僵尸参数）：
 
 - `iter_count` — iter 节点调用次数，上限 `MAX_ITER=3`，reflect rewrite/re_iterate 时重置
-- `synth_count` — synth 节点调用次数，上限 `MAX_SYNTH=2`，reflect 时重置
 - `reflection_count` — reflect 节点调用次数，上限 `MAX_REFL=3`，**永不重置**（绝对上限，防死循环）
 
-### 工具状态（防死循环 bug）
+**注意**：`MAX_REFL` 不是工具循环的刹车 —— 工具循环（`iter → tools → iter`）根本不经过 reflect 节点。
+工具循环唯一的刹车是 `MAX_ITER`。改路由时两个都要保留。
 
-`StatusToolNode(ToolNode)` 包装 LangGraph ToolNode，写 `state["tool_status"]` 字典：
+### 工具状态
 
-| 值 | 触发条件 |
-|---|---|
-| `success` | 工具返回非空内容 |
-| `empty` | 工具返回空字符串 |
-| `timeout` | 工具抛 TimeoutError |
-| `error` | 工具抛其他异常 |
+用 LangGraph 官方钩子 `ToolNode(ALL_TOOLS, wrap_tool_call=status_wrapper)` 拦截每次工具调用，
+写 `state["tool_status"]` 字典。
 
-reflect prompt 硬约束：工具 timeout/error 时不应判 `re_iterate`（否则 `iter → tools(超时) → iter` 死循环）。即便 LLM 误判，`MAX_REFL=3` 兜底强制 end。
+**key 是调用 id，不是工具名。**调用 id 由模型生成、每次调用唯一。同一轮里 MiniMax 常常
+并发调同一个工具 2~3 次（实测一次决策就发 2 个 `rag_search`），按工具名做 key 会让后一次
+调用覆盖前一次的状态（实测：成功的那条被 timeout 冲掉）。
+
+**value 是结构化条目** `{tool, status, code, retryable}`：
+
+| status | code | retryable | 触发条件 |
+|---|---|---|---|
+| `success` | `OK` | — | 工具返回非空内容 |
+| `empty` | `EMPTY_RESULT` | — | 工具返回空字符串 |
+| `timeout` | `TOOL_TIMEOUT` | ✅ | 工具抛 `AgentTimeoutError` |
+| `error` | `TOOL_ERROR` | ❌ | 工具抛 `AgentToolError` 或其他异常 |
+
+`retryable` = "这个失败重试有没有意义"。当前只有 timeout 为 True；更细的分类
+（限流/服务不可用 → 可重试，参数错/代码 bug → 不可重试）暂时做不了，因为
+`core/rags/rags.py` 的 `retrieve()` 用 `except Exception: return []` 把异常吞了。
+
+不要重新继承 `ToolNode` 并重写 `__call__`：`ToolNode.__init__` 把被调用的方法钉死成 `_func`，
+LangGraph 走 `node.invoke(...)` → `self.func`，子类重写的 `__call__` 永远不会被执行。
+`wrap_tool_call` 是框架提供的官方拦截点，不碰内部实现。
+
+失败时仍必须写 `ToolMessage`，否则 graph 卡在"有 tool_calls 但没应答"，后续 LLM 调用会被判非法。
+失败时 ToolMessage 的内容是**结构化 JSON 载荷**（不是中文散文）：
+
+```json
+{"code": "TOOL_TIMEOUT", "status": "timeout", "retryable": true, "message": "调用超时：..."}
+```
+
+成功时内容保持原样（原始检索片段），不做包装。
+
+reflect prompt 硬约束：工具 timeout/error/empty 时不应判 `re_iterate`（否则 `iter → tools(超时) → iter` 死循环）。
+注意这条硬约束与载荷里的 `retryable: true` 语义不同 —— `retryable` 描述的是"这类错误重试有意义"，
+硬约束描述的是"本 Agent 不靠 re_iterate 重试"（防死循环优先）。
+
+### 超时机制
+
+三层，职责不重叠：
+
+```text
+第 1 层  异常归一化   agent/errors.py
+         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
+         工具层把第三方异常翻译成自家异常，只翻译一次
+
+第 2 层  单次动作超时 agent/timeout.py :: Timer
+         Timer(TOOL_TIMEOUT).call(fn, ...) —— 超时抛 AgentTimeoutError
+
+第 3 层  整图总时限   state["deadline"] + agent/timeout.py :: is_expired()
+         runtime.ask() 写入 deadline = time.time() + TOTAL_TIMEOUT
+         每个节点动手前协作式检查，超时就地收手
+```
+
+配置在 `configs/agent_config.yaml` 的 `agent.timeout` 段（`llm` / `tool` / `total`），
+由 `agent/constants.py` 加载导出并 assert 校验。改超时只改 YAML。
+
+两条硬规则：
+
+- **`.with_config({"timeout": N})` 是死代码** —— `langchain_core` 从不读 `RunnableConfig["timeout"]`。
+  超时只能在构造时传：`LLMmodel.create_minimax("MiniMax-M3.1-Flash", timeout=LLM_TIMEOUT)`。
+  三个 LLM 节点都走这条路径。
+- **Python 杀不掉线程**（没有 `Thread.terminate()`）。超时只能"不再等"，
+  底层线程仍会跑完并占着连接。所以工具层自身也要有界。
+
+`api/api_agent.py` 的端点必须是**普通 `def`**，不能是 `async def` ——
+`ask()` 是同步阻塞的，写在 `async def` 里会占住事件循环，把整个 FastAPI 服务卡死。
+FastAPI 对普通 `def` 端点会自动丢到线程池。
 
 ### 配置
 
-`configs/agent_config.yaml` 定义 `MAX_ITER` / `MAX_SYNTH` / `MAX_REFL`。`agent/constants.py` 加载并导出，启动时 assert 校验。
+`configs/agent_config.yaml` 定义 `MAX_ITER` / `MAX_REFL` / `timeout.{llm,tool,total}`。
+`agent/constants.py` 加载并导出，启动时 assert 校验。
 
 ### 工具清单
 
@@ -171,11 +280,12 @@ reflect prompt 硬约束：工具 timeout/error 时不应判 `re_iterate`（否�
 
 ### 节点细节
 
-- `agent/nodes/iter_node.py`：`bind_tools(ALL_TOOLS)`，prompt 强制"不调工具时输出 READY"，含 try/except + `iter_count >= MAX_ITER` 边界检查
-- `agent/nodes/synth_node.py`：不挂 `bind_tools`，按 `state["last_critique"]` 是否空切换 prompt 模式（首次 vs 重写），含 try/except + `synth_count >= MAX_SYNTH` 边界检查
-- `agent/nodes/reflect_node.py`：用 `with_structured_output(ReflectOutput)`，Pydantic 解析；失败 fallback `next_action=rewrite`；超 `MAX_REFL` 强制 end；rewrite/re_iterate 时重置 iter/synth count
-- `agent/nodes/status_tool_node.py`：包装 `ToolNode`，4 种 status 值 + ToolMessage 兜底（避免 graph 卡在 tool_calls 未应答）
-- `agent/nodes/should_continue.py`：含 2 个条件边函数（`should_continue` + `after_reflect`）
+- `agent/nodes/iter_node.py`：`bind_tools(ALL_TOOLS)`，prompt 强制"不调工具时输出 READY"，含 try/except + `iter_count + 1 >= MAX_ITER` 边界检查 + `is_expired` 检查。边界检查必须用 `iter_count + 1`（`iter_count` 是"已跑过几次"，本次调用之后才达到上限）；写成 `iter_count >= MAX_ITER` 会白调一次 LLM，而它发出的 tool_calls 会被 `should_continue` 丢弃 → 悬空消息
+- `agent/nodes/synth_node.py`：不挂 `bind_tools`，按 `state["last_critique"]` 是否空切换 prompt 模式（首次 vs 重写），含 try/except + `is_expired` 检查（放在 `_get_llm()` 之前，避免白加载一次 LLM）
+- `agent/nodes/reflect_node.py`：用 `with_structured_output(ReflectOutput)`，Pydantic 解析；失败 fallback `next_action=rewrite`；超 `MAX_REFL` 强制 end；rewrite/re_iterate 时重置 iter_count
+- `agent/nodes/status_tool_wrapper.py`：官方 `wrap_tool_call` 钩子，4 种 status 值 + 结构化 ToolMessage 载荷 + `format_tool_status()` 渲染函数（iter/synth/reflect 三个节点共用）
+- `agent/nodes/material.py`：`collect_round_material(messages)` —— 取"最后一条 HumanMessage 之后的全部 ToolMessage"（三个节点统一用它取素材）
+- `agent/nodes/should_continue.py`：含 2 个条件边函数（`should_continue` + `after_reflect`），两者都检查 `expired`
 
 ### 状态 Schema
 
@@ -183,19 +293,46 @@ reflect prompt 硬约束：工具 timeout/error 时不应判 `re_iterate`（否�
 class AgentState(TypedDict, total=False):
     messages: Annotated[list, add_messages]
     iter_count: Annotated[int, _inc_iter]
-    synth_count: Annotated[int, _inc_synth]
     reflection_count: Annotated[int, _inc_refl]
-    tool_status: Annotated[dict, _merge_tool_status]
+    tool_status: Annotated[dict, _merge_tool_status]   # key=调用 id, value={tool,status,code,retryable}
     last_critique: str
+    next_action: str      # reflect 的决策：end / rewrite / re_iterate
+    deadline: float       # 图级总时限（绝对时间戳）
+    expired: bool         # 已超时标志 → 条件边直接 END
+    last_answer: str      # synth 最近一次写出的答案（超时兜底时交出去）
 ```
+
+字段必须显式声明，否则 LangGraph 不会把它写进 state（`next_action` 曾经因此恒为缺省值）。
+`last_answer` 不能靠"倒着找最后一条 AIMessage"推导 —— messages 里混着 iter 的占位消息（`"READY"`），
+会把占位消息当成答案交出去。
 
 ### Runtime
 
-`agent.runtime.ask()` debug 模式返回 6 字段：`answer` / `iter_count` / `synth_count` / `reflection_count` / `tool_called` / `last_action`。`api/api_agent.py` 仍调 `ask()` 非 debug 模式。
+`agent.runtime.ask()` debug 模式返回 5 字段：`answer` / `iter_count` / `reflection_count` / `tool_called` / `last_action`。`api/api_agent.py` 仍调 `ask()` 非 debug 模式。
+
+`runtime.py` 显式给 LangGraph `recursion_limit`（从 `MAX_ITER` / `MAX_REFL` 推导，不写死），
+否则最坏情况 28 步会撞默认上限 25，抛 `GraphRecursionError`。
 
 ### 错误和调试
 
 `ask()` 仍捕获 graph 调用异常返回友好消息（不抛 HTTP 500）。`ask()` debug=True 返回 dict 含 `last_action` 字段（end / rewrite / re_iterate / error）。
+
+### 已知遗留
+
+- **`empty` 状态不精确**：`core/rags/rags.py` 检索失败也返回 `[]`，
+  工具侧区分不了"检索为空"和"检索失败"。修它会连带改 `/rag` 路径行为，
+  也是 `retryable` 精细化的前置。
+- **`core/rags/rags.py` 的 Ollama 调用仍不限时**：`OllamaEmbeddings` 没传 timeout。
+  工具外层的 `Timer` 兜住了图不再卡死，但底层连接本身仍无界。
+- **Agent 没有多轮记忆**：`runtime.ask()` 每次 invoke 都传全新的
+  `{"messages": [HumanMessage(question)]}`；`session_id` → `thread_id` 传了但图没有
+  checkpointer，`thread_id` 没人读。三个 LLM 节点也从不把 `state["messages"]` 发给 LLM
+  （每次从零拼 prompt：原问题 + 工具素材 + 计数器）。做记忆前要先处理 iter 的占位消息
+  （`"READY"` / `"已达迭代上限，结束"`）—— 它们会一起进历史。
+
+> 已修复（2026-11-15，O-006）：`tool_calls` 悬空 —— `iter_node` 的边界检查改成
+> `iter_count + 1 >= MAX_ITER`，最后一轮不再调 LLM，从根上不产生悬空消息。
+> 实测悬空数从 2/7 降到 0/5。详见 `docs/status/项目优化.md` O-006。
 
 ## RAG and Vector Storage
 
@@ -234,6 +371,13 @@ Model selection: direct chat/RAG use the managed current model, while Agent node
 - Keep Agent tool output as raw retrieved chunks; final synthesis belongs to the Agent LLM.
 - Make Agent routing changes in the graph, prompts, tool schema, or conditional edges—not by reintroducing the removed custom JSON/confidence router.
 - Preserve both loop guards when modifying graph routing.
+- Key `state["tool_status"]` by tool-call id, never by tool name — one round can call the same tool several times concurrently, and a name key silently overwrites earlier results.
+- Keep `iter_node`'s limit check as `iter_count + 1 >= MAX_ITER`. `iter_count` is the count of *previous* visits, so `iter_count >= MAX_ITER` fires one round late, wasting an LLM call whose `tool_calls` are then dropped (leaving a dangling AIMessage that MiniMax rejects with HTTP 400).
+- Always answer a tool call with a `ToolMessage` — a call without one leaves the graph in an invalid message state.
+- Never use `.with_config({"timeout": N})` — it is dead code. Pass `timeout=` when constructing the client.
+- Keep `api/api_agent.py`'s endpoint as a plain `def`. `ask()` is blocking; `async def` would stall the whole FastAPI event loop.
+- Normalize tool-layer exceptions to `AgentTimeoutError` / `AgentToolError` exactly once, in the tool itself. Downstream layers should not re-translate third-party exception types.
 - Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
 - `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
 - When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.
+- When changing `agent/` behavior, add or update a case in `test/test_agent_timeout.py`; the archived scripts under `test/archive/` no longer run.
