@@ -34,7 +34,11 @@ async def lifespan(app: FastAPI):
         from utils.models.embedding_model import EmbeddingModel
         embed = EmbeddingModel.create_default()
         milvus_cfg = embed.get_milvus_config()
-        client = MilvusClient(host=milvus_cfg["host"], port=milvus_cfg["port"])
+        # ⚠️ pymilvus 2.6 的 MilvusClient 只认 uri：host/port 会落进 **kwargs 被**静默忽略
+        #    → 实际连的是默认的 http://localhost:19530。
+        #    宿主机上 localhost 恰好就是 Milvus，所以这个写法一直"能用"；
+        #    容器里 localhost 是容器自己 → 探活必失败（host.docker.internal 同理）。
+        client = MilvusClient(uri=f"http://{milvus_cfg['host']}:{milvus_cfg['port']}")
         client.list_collections()
         print(f"[lifespan] Milvus 探活成功: {milvus_cfg['host']}:{milvus_cfg['port']}")
     except Exception as e:

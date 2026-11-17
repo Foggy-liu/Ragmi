@@ -4,6 +4,10 @@ import os
 import yaml
 from pathlib import Path
 
+# YAML 里 ${VAR} 占位符在环境变量缺失时的兜底（见 embedding_model.py 同名常量）
+_ENV_FALLBACKS = {"OLLAMA_BASE_URL": "http://127.0.0.1:11434/v1"}
+
+
 class LLMmodel:
     def __init__(self, platform=None, model_name=None, **kwargs):
         current_script_path = Path(__file__).resolve()
@@ -52,7 +56,7 @@ class LLMmodel:
                 for k, v in plat.items():
                     if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
                         env_key = v.strip("${}")
-                        plat[k] = os.getenv(env_key, v)
+                        plat[k] = os.getenv(env_key) or _ENV_FALLBACKS.get(env_key, v)
                 return plat
         raise ValueError(f"平台{self.platform}未配置，请检查model_config.yaml")
 

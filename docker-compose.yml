@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   milvus:
     image: milvusdb/milvus:standalone
@@ -26,6 +24,8 @@ services:
       - ragmi-net
 
   api:
+    # api 与 web 用同一个镜像（web 只换 command），避免 web 每次启动都 pip install 一遍
+    image: ragmi-app:local
     build:
       context: .
       dockerfile: Dockerfile
@@ -36,6 +36,10 @@ services:
       MILVUS_HOST: milvus
       MILVUS_PORT: 19530
       LLM_ROOT: /app
+      # ⚠️ 容器里的 127.0.0.1 是容器自己 → embedding 必须走宿主机 Ollama。
+      # 末尾的 /v1 会被 EmbeddingModel._init_client 剥掉（embedding 走 Ollama 原生 /api/embed），
+      # 而 ollama 平台的 chat 走 OpenAI 兼容端点，需要保留 /v1。
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
     env_file:
       - .env
     volumes:
@@ -50,12 +54,14 @@ services:
       - "host.docker.internal:host-gateway"
 
   web:
-    image: python:3.11-slim
+    image: ragmi-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: ragmi-web
     working_dir: /app
     command: >
-      bash -c "pip install --no-cache-dir -r requirements.txt streamlit &&
-               streamlit run main_web.py --server.address 0.0.0.0 --server.port 8501"
+      streamlit run main_web.py --server.address 0.0.0.0 --server.port 8501
     ports:
       - "8501:8501"
     volumes:

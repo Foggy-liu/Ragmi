@@ -234,16 +234,28 @@ streamlit run main_web.py
 ## Docker 部署
 
 ```bash
-# 一键：App + Milvus（3 个服务）
-docker-compose up -d
+# 一键：3 个服务（milvus + api + web）
+docker-compose up -d --build
 
 # 或分开
 docker-compose up -d milvus    # Milvus（健康检查约 90 秒）
-docker-compose up -d app       # App
+docker-compose up -d api       # FastAPI 后端 :8000
+docker-compose up -d web       # Streamlit 前端 :8501
 ```
 
-> ⚠️ `api` 服务用 `build`（代码烤进镜像），改代码后不 rebuild 不生效；
-> `web` 服务是 bind-mount，改完立即生效。
+- `api` 与 `web` **共用同一个镜像** `ragmi-app:local`（`web` 只换 command，不再每次启动 `pip install`）。
+- ⚠️ `api` 服务用 `build`（代码烤进镜像），**改代码后必须 rebuild 才生效**：
+  `docker compose up -d --build api`；`web` 是 bind-mount，改完立即生效。
+- **Ollama 跑在宿主机上**（compose 里没有 ollama 服务）。容器通过 `host.docker.internal:11434` 访问它，
+  地址由 compose 的 `OLLAMA_BASE_URL` 给出；裸跑时用 `.env` 里的 `http://127.0.0.1:11434/v1`。
+- **Milvus 只认 `uri`**：`pymilvus 2.6` 的 `MilvusClient(host=..., port=...)` 会**静默忽略** host/port，
+  实际连默认的 `localhost:19530`。宿主机上碰巧能用，**容器里必失败**。一律写
+  `MilvusClient(uri=f"http://{host}:{port}")`。
+- **`requirements.txt` 是全锁文件**（139 包，闭包按 linux 标记求）：只锁直接依赖时传递依赖会漂到新版本
+  → 容器 ImportError。改依赖先改「直接依赖」段再重解闭包，**别手改锁定区**。
+- 后端探活：`curl http://localhost:8000/debug/simple`。
+  ⚠️ 若宿主机上还跑着裸跑后端（监听 `127.0.0.1:8000`），`localhost:8000` 会打到**它**而不是容器 ——
+  测容器请用宿主机 LAN IP，并对照容器的 uvicorn access log 确认。
 
 ---
 

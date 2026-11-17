@@ -46,7 +46,8 @@ def _wait_for_rows(client, coll, timeout=180, interval=2):
 def test_alias_is_created_with_timestamped_collection():
     """alias 应指向时间戳命名的新集合，集合行数 > 0。"""
     # 记录运行前的 alias 状态
-    client = MilvusClient(host="127.0.0.1", port="19530")
+    # ⚠️ pymilvus 2.6 只认 uri，host/port 会被静默忽略 → 连默认的 localhost:19530
+    client = MilvusClient(uri="http://127.0.0.1:19530")
     try:
         before = client.describe_alias("txt_data")
         before_coll = before["collection_name"]

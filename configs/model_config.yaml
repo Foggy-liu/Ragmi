@@ -9,7 +9,9 @@ DEFAULT_EMBEDDING_MODEL:
 # 平台配置（ollama + aliyun + minimax—使用的openai）
 PLATFORMS:
   - platform_name: "ollama"
-    api_base_url: "http://127.0.0.1:11434/v1"
+    # ⚠️ 别再硬编码 127.0.0.1：容器里的 localhost 是容器自己 → embedding 连不上宿主机 Ollama。
+    # 裸跑 = http://127.0.0.1:11434/v1 ；容器内 = http://host.docker.internal:11434/v1（compose 给）。
+    api_base_url: "${OLLAMA_BASE_URL}"
     api_key: "EMPTY"          # ollama 无需密钥
     timeout: 60               # 超时时间
     concurrency: 5            # 并发数
