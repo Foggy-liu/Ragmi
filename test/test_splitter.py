@@ -45,13 +45,31 @@ def test_s4_no_content_loss():
     assert chunks[-1].endswith(SAMPLE[-30:])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P1-7: max_chars 没传给 LangChain 切分器 —— 代码写死 chunk_size=300，"
-           "configs/model_config.yaml 写的是 280（漂移未修）",
-)
 def test_s5_max_chars_is_honored():
-    """（期望行为）Splitter(max_chars=100) 时每块都应 ≤ 100 字符。"""
+    """Splitter(max_chars=100) 时每块都应 ≤ 100 字符。
+
+    修复前 max_chars 没传给 LangChain 切分器（写死 chunk_size=300）→ 这条 xfail（P1-7）。
+    """
     chunks = Splitter(max_chars=100).split(SAMPLE)
 
     assert all(len(chunk) <= 100 for chunk in chunks)
+
+
+def test_s6_default_comes_from_yaml():
+    """默认切分参数来自 configs/model_config.yaml，不再是代码写死的值。
+
+    固定住"配置只有一个事实来源"这条（P1-7 的另一半：YAML 从没被读过）。
+    """
+    import yaml
+    from pathlib import Path
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "model_config.yaml"
+    with open(config_path, encoding="utf-8") as f:
+        expected = yaml.safe_load(f)["EMBEDDING_CONFIG"]["text_splitter"]
+
+    splitter = Splitter()
+
+    assert splitter.max_chars == expected["chunk_size"]
+    assert splitter.overlap == expected["chunk_overlap"]
+    assert splitter.langchain_splitter._chunk_size == expected["chunk_size"]
+    assert splitter.langchain_splitter._chunk_overlap == expected["chunk_overlap"]

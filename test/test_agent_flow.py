@@ -305,16 +305,11 @@ def test_f9a_expired_before_iter_short_circuits(fake_llm, fake_rag, graph):
     assert ai_contents(state["messages"]) == ["已达总时限，停止思考"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="runtime._extract_answer 倒着找最后一条 AIMessage，会把内部占位"
-           "「已达总时限，停止思考」当成答案交给用户（项目现状.md §2.8 已记录）",
-)
 def test_f9a_x_user_should_not_see_internal_placeholder(fake_llm, fake_rag, graph):
-    """（期望行为，当前未实现）用户不该看到内部占位消息。
+    """用户不该看到 iter 的内部占位消息。
 
-    用 xfail(strict=True) 固化：将来有人修了 _extract_answer，这条会 XPASS →
-    报失败 → 逼着摘掉标记。
+    修复前 runtime._extract_answer 倒着找最后一条 AIMessage，图超时时会把
+    「已达总时限，停止思考」当成答案交出去（项目现状.md §2.8）。
     """
     from agent.runtime import _extract_answer
 

@@ -30,10 +30,14 @@ def test_s1_calculator_is_called(ask):
 
 def test_s2_greeting_gets_an_answer(ask):
     """"你好" → 答案非空。"""
+    from agent.constants import INTERNAL_SIGNALS
+
     result = ask("你好", debug=True)
 
     assert result["answer"].strip(), f"答案是空的：{result}"
-    assert result["answer"] not in ("READY", "已达迭代上限，结束", "已达总时限，停止思考")
+    # 从 agent.constants 导入而不是复制一份字面量 —— 复制就会漂移，
+    # 这条断言会变成永真（agent 侧新增内部信号时测试侧不会跟着更新）。
+    assert result["answer"] not in INTERNAL_SIGNALS
 
 
 def test_s3_knowledge_base_question_uses_rag_search(ask):

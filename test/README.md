@@ -1,10 +1,10 @@
 # test/ 目录说明
 
-> **实测日期：2026-11-15 / 目录整理 + 4 层测试体系落地：2026-11-16**。
+> **实测日期：2026-11-15 / 目录整理 + 4 层测试体系落地：2026-11-16 / 债务清零 + 新增工具层：2026-11-17**。
 > 下面每一行的"结果"都是实跑出来的，不是推断。
 >
 > **这个文件是 `test/` 的唯一索引**。当前测试体系的完整设计与落地状态见
-> [`../docs/status/测试体系.md`](../docs/status/测试体系.md)（4 层 38 条，**已全部落地**），
+> [`../docs/status/测试体系.md`](../docs/status/测试体系.md)（4 层 66 独立用例 / 75 收集项，**已全部落地**），
 > 已有测试的实测清点见 [`../docs/status/测试现状.md`](../docs/status/测试现状.md)。
 
 ## 一、目录结构
@@ -16,7 +16,8 @@ test/
 ├── test_vector_split.py        # vector_split() 端到端（1 用例）   ← 生效，标 slow
 ├── test_agent_flow.py          # L2 Agent 流程层（25 收集项）      ← 生效（2026-11-16 新增）
 ├── test_api_contract.py        # L3 API 契约层（10 用例）           ← 生效（2026-11-16 新增）
-├── test_splitter.py            # L2 切分层（5 用例）                ← 生效（2026-11-16 新增）
+├── test_splitter.py            # L2 切分层（6 用例）                ← 生效（2026-11-16 新增）
+├── test_tools.py               # L2 工具纯函数层（22 用例）        ← 生效（2026-11-17 新增）
 ├── test_eval_smoke.py          # L4 真环境冒烟（4 用例）            ← 生效，标 slow
 ├── conftest.py                 # 假 LLM / 假检索 / 假后端 fixtures
 ├── helpers.py                  # 公共工具层（假 LLM 剧本、消息工具）
@@ -55,12 +56,12 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 
 | 类别 | 文件 | 状态 | 说明 |
 |---|---|---|---|
-| **I · 新增测试层** | `test_agent_flow.py`（25 收集项）<br>`test_api_contract.py`（10）<br>`test_splitter.py`（5）<br>`test_eval_smoke.py`（4，slow）<br>`e2e/test_browser_e2e.py`（8，e2e） | ✅ 收集 | 2026-11-16 建的 4 层测试体系，详见 [`../docs/status/测试体系.md`](../docs/status/测试体系.md) |
+| **I · 新增测试层** | `test_agent_flow.py`（25 收集项）<br>`test_api_contract.py`（10）<br>`test_splitter.py`（6）<br>`test_tools.py`（22）<br>`test_eval_smoke.py`（4，slow）<br>`e2e/test_browser_e2e.py`（8，e2e） | ✅ 收集 | 2026-11-16 建的 4 层测试体系 + 2026-11-17 新增工具层，详见 [`../docs/status/测试体系.md`](../docs/status/测试体系.md) |
 | **H · 公共工具层** | `conftest.py` + `helpers.py` + `fake_backend.py` | ✅ | 假 LLM / 假检索 / 进程外假后端的 fixtures，本层自己不含用例 |
 
 ---
 
-## 二、当前生效的 pytest 用例（66 个收集项）
+## 二、当前生效的 pytest 用例（89 个收集项）
 
 ### A 类 · 快回归（13 个，全部通过）
 
@@ -103,22 +104,23 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 > 而几分钟后同一个 query 返回 1667（数据没丢，是可见性窗口）。
 > 所以断言走 `_wait_for_rows()` **轮询**（最多 180 秒），不要改成单次查询。
 
-### C 类 · 新增 4 层测试体系（2026-11-16）
+### C 类 · 新增 4 层测试体系（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层）
 
 `pytest -m "not slow and not e2e" -v`
-→ **51 passed, 2 xfailed, 13 deselected in 9.70s**（下面 4 个文件全绿）
+→ **76 passed, 13 deselected in 7.95s**（**0 xfailed**）
 
 | 文件 | 层 | 用例 | 测什么 | 结果 |
 |---|---|---|---|---|
-| `test_agent_flow.py` | L2 流程 | 16 独立 + 9 参数化 = **25 收集项** | 跑**真的 LangGraph 图**（假 LLM 剧本 + 假检索）：工具 4 态（success/empty/timeout/error）、tool_calls 按 id 不覆盖、检索素材真进 prompt、iter/reflect LLM 崩溃兜底、两个循环刹车（MAX_ITER / MAX_REFL）、三种超时时机、reflect 未知 action、`ask()` 恰好 5 个键；外加**公共不变式「悬空 tool_calls == 0」**参数化套 9 个场景 | ✅ **24 passed, 1 xfailed** |
+| `test_agent_flow.py` | L2 流程 | 16 独立 + 9 参数化 = **25 收集项** | 跑**真的 LangGraph 图**（假 LLM 剧本 + 假检索）：工具 4 态（success/empty/timeout/error）、tool_calls 按 id 不覆盖、检索素材真进 prompt、iter/reflect LLM 崩溃兜底、两个循环刹车（MAX_ITER / MAX_REFL）、三种超时时机、**超时兜底不交内部占位**、reflect 未知 action、`ask()` 恰好 5 个键；外加**公共不变式「悬空 tool_calls == 0」**参数化套 9 个场景 | ✅ **25 passed** |
 | `test_api_contract.py` | L3 契约 | **10** | `TestClient` + `dependency_overrides`：三个接口都返 `response`（不含 `answer`）、缺字段 422、`/debug/simple`、`/available` 含 MiniMax、`/switch_model` 成功/失败（测完还原模型）、上传路径穿越 / 类型白名单 / 同名跳过或覆盖 | ✅ **10 passed** |
-| `test_splitter.py` | L2 切分 | **5** | 纯函数：空文本、单块、每块非空且 ≤300、**无内容丢失**；S5 断言 `max_chars` 生效 → `xfail(strict=True)` 固化 **P1-7** | ✅ **4 passed, 1 xfailed** |
+| `test_splitter.py` | L2 切分 | **6** | 纯函数：空文本、单块、每块非空且 ≤300、**无内容丢失**、`max_chars` 真的生效、**默认参数来自 YAML** | ✅ **6 passed** |
+| `test_tools.py` | L2 工具 | **22** | `calculator` 的 AST 白名单求值：算术 8 条 + 危险输入 10 条（`__import__` / `open` / `().__class__` / 字符串 / `True+1` / 变量名 / 大指数 / 长表达式 / 除零 / 语法错）+ 畸形输入 4 条参数化。**P1-2 的回归护栏** | ✅ **22 passed** |
 | `test_eval_smoke.py` | L4 真环境 | **4**（标 `slow`） | 真 MiniMax + 真 Milvus：算式必调工具、问候有答案、知识库题走 `rag_search`、工具失败后不失控 | ✅ **4 passed**（实测 162 秒；S3/S4 天然 flaky） |
 
 ### D 类 · 浏览器 E2E（8 条，标 `e2e`）
 
 `pytest -m e2e -v --tracing=retain-on-failure`
-→ **7 passed, 1 xfailed in 109.47s**
+→ **8 passed in 66.93s**（2026-11-17）
 跑法：**进程外假后端**（`test/fake_backend.py`）+ **专用 Streamlit（8511，注入 `API_BASE_URL`）**。
 ⚠️ 不复用用户已开的 Streamlit —— 复用来的进程没有 env 注入，拦截会失效。
 
@@ -135,7 +137,7 @@ python -m playwright install chromium-headless-shell
 | E1 | 智能问答：发问 → 用户消息 + 助手答案 | ✅ |
 | E2 | 🗑 清空 → 消息归零 | ✅ |
 | E3 | ⚙ 点击不报错（功能没写，只测不崩） | ✅ |
-| E4 | 知识库问答显示「(无答案)」→ `xfail(strict=True)` **固化 P1-1**（修好了测试会报失败，提醒摘标记） | ⏭️ **xfailed** |
+| E4 | 知识库问答 → 显示**假后端返回的答案**，且**不是**「(无答案)」 | ✅ **2026-11-17**（前端改读 `response`，P1-1 已修） |
 | E5 | 仓库管理 → 传文件 → 出现统计**且数量 > 0** | ✅ |
 | E6 | 三个页面互切 | ✅ |
 | E7 | 后端返 500 → 页面显示"请求失败"而不是白屏 | ✅ |
@@ -190,7 +192,7 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
   `/api/upload-and-parse`、`/api/batch-upload-and-parse`（批量 2 个）、
   路径穿越 `../../evil.txt` → `failed_uploads`、`.exe` → `failed_uploads`、同名 → `skipped_files`。
 - **B 组（5 条）· 页面**：智能问答真问答、🗑 清空归零、仓库管理上传、三个页面互切、
-  知识库问答页 → **命中已知缺陷 P1-1**（前端读 `answer`、后端返 `response` → 页面显示「(无答案)」）。
+  知识库问答页 → **断言页面真的返回了答案**（P1-1 修好前这里是"命中已知缺陷"的宽松断言）。
 
 **不污染仓库**：上传用 `e2e_probe_` 前缀的临时文件，测完从 `documents/` 和 `txt/` 删掉；
 `txt/.file_filter.json` 先备份后还原。
@@ -251,7 +253,7 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
 
 ## 五、接下来
 
-新测试体系（4 层 38 条）的设计与实施计划：
+新测试体系（4 层，66 独立用例 / 75 收集项）的设计与实施计划：
 
 - 设计：[`../docs/status/测试体系.md`](../docs/status/测试体系.md)
 - 实施计划：[`../docs/plan/2026-11-16-test-suite-impl.md`](../docs/plan/2026-11-16-test-suite-impl.md)

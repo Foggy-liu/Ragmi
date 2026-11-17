@@ -2,22 +2,32 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import List
 from langchain_core.documents import Document
 from pathlib import Path
+import yaml
+
+# 切分参数的**唯一事实来源**：configs/model_config.yaml 的 EMBEDDING_CONFIG.text_splitter。
+# 以前代码写死 chunk_size=300、YAML 写 280，而 YAML 从没被读过 → 改配置不生效、两边漂移（P1-7）。
+_CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "model_config.yaml"
+with open(_CONFIG_PATH, encoding="utf-8") as _f:
+    _SPLITTER_CONFIG = yaml.safe_load(_f)["EMBEDDING_CONFIG"]["text_splitter"]
 
 class Splitter:
     """
     两步切分：LangChain切分 → 智能拼接
     """
 
-    def __init__(self, max_chars=300, overlap=30, small_threshold=80):
-        self.max_chars = max_chars
-        self.overlap = overlap
+    def __init__(self, max_chars=None, overlap=None, small_threshold=80):
+        # 默认值从 YAML 读；显式传参时以传参为准
+        self.max_chars = int(_SPLITTER_CONFIG["chunk_size"]) if max_chars is None else max_chars
+        self.overlap = int(_SPLITTER_CONFIG["chunk_overlap"]) if overlap is None else overlap
         self.small_threshold = small_threshold
 
         # 1. LangChain 切分器
+        #    chunk_size 必须用 self.max_chars —— 写死的话 max_chars 这个参数形同虚设，
+        #    智能拼接那一步再按 max_chars 裁，两边标准不一致。
         self.langchain_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=300,
-            chunk_overlap=30,
-            separators=["\n\n", "\n", "。", "；", "，", " "]
+            chunk_size=self.max_chars,
+            chunk_overlap=self.overlap,
+            separators=list(_SPLITTER_CONFIG["separators"])
         )
 
     def split(self, text: str) -> List[str]:
@@ -166,8 +176,8 @@ class Splitter:
 
 
 if __name__ == '__main__':
-    # 使用
-    splitter = Splitter(max_chars=300, overlap=30, small_threshold=80)
+    # 使用（切分参数默认从 configs/model_config.yaml 读）
+    splitter = Splitter()
 
     # 处理txt文件夹中的所有文件
     splitter.split_all_files()

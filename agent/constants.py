@@ -35,3 +35,20 @@ assert TOTAL_TIMEOUT >= 1, f"TOTAL_TIMEOUT must be >= 1, got {TOTAL_TIMEOUT}"
 assert TOTAL_TIMEOUT > LLM_TIMEOUT, (
     f"TOTAL_TIMEOUT ({TOTAL_TIMEOUT}) must be > LLM_TIMEOUT ({LLM_TIMEOUT})"
 )
+
+# ---------------------------------------------------------------------------
+# iter 节点的内部信号
+# ---------------------------------------------------------------------------
+# 这些字符串是 iter 写进 messages 的**流程标记**，不是答案：
+#   SIGNAL_READY     —— 不调工具，去 synth 写答案（LLM 崩溃时也是它）
+#   SIGNAL_MAX_ITER  —— 迭代上限到了，收摊
+#   SIGNAL_EXPIRED   —— 图级总时限到了，收摊
+#
+# 为什么集中定义：runtime._extract_answer 要把它们从答案里剔掉。
+# 两边各写一份字符串、改了一处忘了另一处 → 用户又会看到「已达总时限，停止思考」
+# （项目现状.md §2.8 / F9a_x）。
+SIGNAL_READY = "READY"
+SIGNAL_MAX_ITER = "已达迭代上限，结束"
+SIGNAL_EXPIRED = "已达总时限，停止思考"
+
+INTERNAL_SIGNALS = frozenset({SIGNAL_READY, SIGNAL_MAX_ITER, SIGNAL_EXPIRED})

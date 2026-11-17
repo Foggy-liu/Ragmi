@@ -89,11 +89,14 @@ MODEL_DEFAULTS:
 # 向量化配置（新增或修改这部分）
 EMBEDDING_CONFIG:
   # 文本切分配置
+  # ⚠️ 这一段是切分参数的**唯一事实来源** —— utils/txt_spliter/spliter.py 从这里读。
+  # 以前代码写死 chunk_size=300、这里写 280，而这份 YAML 从没被读过 → 改配置不生效
+  # （P1-7）。现在值对齐到实际一直在跑的值（300），改这里就能改行为。
   text_splitter:
-    chunk_size: 280
+    chunk_size: 300
     chunk_overlap: 30
-    separators: ["\n\n", "\n", "。", "；", "，", " ", ""]
-  
+    separators: ["\n\n", "\n", "。", "；", "，", " "]
+
   # 向量数据库配置（Milvus）
   vector_store:
     type: "milvus"

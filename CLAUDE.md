@@ -95,19 +95,23 @@ Currently live test files:
 
 - `test/test_agent_timeout.py` — timeout/exception mechanism (11 cases, no Milvus or LLM needed).
 - `test/test_main_routes_covered.py` — AST scan of `api/*.py` + `main.py`, prevents unmounted router dead code (2 cases).
-- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (11 cases + a parametrized "no dangling tool_calls" invariant).
+- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (16 cases + a parametrized "no dangling tool_calls" invariant → 25 collected items).
 - `test/test_api_contract.py` — **L3 API contract layer**: `TestClient` + `dependency_overrides`. Field shapes, missing-field 422, model switching, and the upload validation logic (path traversal / type whitelist / same-name skip-or-overwrite) (10 cases).
-- `test/test_splitter.py` — pure-function splitter checks (5 cases, always run).
+- `test/test_tools.py` — **L2 tool layer**: pure-function checks on the tool bodies. Currently covers `calculator`'s AST-whitelist evaluation (arithmetic, unsafe-input rejection, malformed input) — the regression net for the `eval()` RCE fix (22 cases, always run).
+- `test/test_splitter.py` — pure-function splitter checks (6 cases, always run).
 - `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks). Marked `@pytest.mark.slow` — excluded from the default fast run.
 - `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
 - `test/e2e/test_browser_e2e.py` — Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**).
-- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s; it confirms the known P1-1 defect on the 知识库问答 page.
+- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s.
 
 The four-layer system is documented in `docs/status/测试体系.md`; its design is
-`docs/plan/2026-11-16-test-suite-design.md`.
+`docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-17 the fast run is
+**76 passed / 0 xfailed** and the browser layer is **8 passed** — the three
+`xfail(strict=True)` markers that used to pin known defects (F9a_x / S5 / E4) are gone,
+because P1-1, P1-2 and P1-7 are fixed.
 
 **Coverage gap to keep in mind**: the fast suite now *does* run `graph.invoke()` — the Agent's
-non-timeout routing branches, counter-reset semantics, and reflect decisions have 11 pytest
+non-timeout routing branches, counter-reset semantics, and reflect decisions have 16 pytest
 cases in `test/test_agent_flow.py`, plus a parametrized regression net asserting
 "dangling `tool_calls` == 0". What is **not** covered: the reflect prompt's hard constraint
 ("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
@@ -380,4 +384,7 @@ Model selection: direct chat/RAG use the managed current model, while Agent node
 - Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
 - `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
 - When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.
-- When changing `agent/` behavior, add or update a case in `test/test_agent_timeout.py`; the archived scripts under `test/archive/` no longer run.
+- When changing `agent/` behavior, add or update a case in `test/test_agent_flow.py` (graph / flow) or `test/test_agent_timeout.py` (timeout / exception mechanism); when changing a tool's body, add or update a case in `test/test_tools.py`. The archived scripts under `test/archive/` no longer run.
+- The Agent's internal placeholder messages are defined once in `agent/constants.py` (`SIGNAL_READY` / `SIGNAL_MAX_ITER` / `SIGNAL_EXPIRED`, grouped as `INTERNAL_SIGNALS`). Producers and consumers must reference the constants, never the string literals — a copied literal drifts and turns the "the answer is not a placeholder" assertion into a tautology.
+- `calculator` must never use `eval()`. It evaluates a hand-rolled AST whitelist (`agent/tools/calculator_tool.py`); keep `test/test_tools.py` green if you touch it.
+- The frontend reads `API_BASE_URL` (default `http://localhost:8000`) — all three `web_page/*.py` files. Do not hardcode a backend address again; the previous mix of `localhost:8000` and `api:8000` broke container deployments.

@@ -384,7 +384,7 @@ def run_ui_suite(page):
         return f"清空前 {before} 条 → 清空后 0 条"
     check("B2", "界面", "智能问答页 —— 🗑 清空", b2)
 
-    # ---- B3 知识库问答（已知 P1-1）---------------------------------------
+    # ---- B3 知识库问答（P1-1 已修，前端读 response）-----------------------
     def b3():
         switch_page(page, "知识库问答", "知识库问答")
         page.wait_for_selector(CHAT_INPUT, timeout=60000)
@@ -394,10 +394,10 @@ def run_ui_suite(page):
         bot = answer_text(page)
         page.screenshot(path=str(ART / "ui_3_rag_page.png"), full_page=True)
         assert bot.strip(), "助手回答是空的"
-        if bot.strip() == "(无答案)":
-            return ("KNOWN ⚠️ 命中已知 bug P1-1：前端读 answer、后端返 response "
-                    "→ 页面显示「(无答案)」（预期内的已知缺陷；后端其实有真答案）")
-        return f"⚠️ P1-1 似乎已修复，页面真的返回了答案：{bot[:100].strip()}…"
+        # P1-1 修好后前端读的是 response → 不该再出现兜底串「(无答案)」
+        assert bot.strip() != "(无答案)", (
+            "页面显示「(无答案)」→ 前端又读回 answer 了（P1-1 回归）")
+        return f"页面真的返回了答案：{bot[:100].strip()}…"
     check("B3", "界面", "知识库问答页 —— 直连 /rag", b3)
 
     # ---- B4 仓库管理：上传 -----------------------------------------------

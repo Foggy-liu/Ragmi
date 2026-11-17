@@ -10,7 +10,7 @@
 - POST /agent/chat → {"response": ...}
     前端 rag_page.py:44 读 result["response"] → 少这个键会 KeyError → 页面显示"请求失败"
 - POST /rag → {"response": ...}
-    前端 rag_direct_page.py:33 读 .get("answer") → 返回 response 就落进 P1-1 固化用例
+    前端 rag_direct_page.py 读 .get("response")（P1-1 修复后）
 - POST /api/batch-upload-and-parse →
     {"status","message","upload_details":{"uploaded_files","skipped_files","failed_uploads"},
      "parse_results","note"}

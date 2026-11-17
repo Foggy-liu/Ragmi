@@ -10,7 +10,13 @@ think 剥离：通过 ThinkingStripRunnable 包装 LLM，invoke 返回的 AIMess
 """
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from agent.constants import LLM_TIMEOUT, MAX_ITER
+from agent.constants import (
+    LLM_TIMEOUT,
+    MAX_ITER,
+    SIGNAL_EXPIRED,
+    SIGNAL_MAX_ITER,
+    SIGNAL_READY,
+)
 from agent.llm_wrapper import ThinkingStripRunnable
 from agent.nodes.material import collect_round_material
 from agent.nodes.status_tool_wrapper import format_tool_status
@@ -50,7 +56,7 @@ def iter_node(state: AgentState, llm=None) -> dict:
     # 图级总时限检查：已超时就不再调 LLM，直接收摊
     if is_expired(state):
         return {
-            "messages": [AIMessage(content="已达总时限，停止思考")],
+            "messages": [AIMessage(content=SIGNAL_EXPIRED)],
             "expired": True,
             "iter_count": 1,
         }
@@ -68,7 +74,7 @@ def iter_node(state: AgentState, llm=None) -> dict:
     # 提前一轮收手，从根上不产生悬空；顺带省掉一次白跑的 LLM 调用。
     if iter_count + 1 >= MAX_ITER:
         return {
-            "messages": [AIMessage(content="已达迭代上限，结束")],
+            "messages": [AIMessage(content=SIGNAL_MAX_ITER)],
             "iter_count": 1,  # 仍递增（让超限事件被记录）
         }
 
@@ -95,7 +101,7 @@ def iter_node(state: AgentState, llm=None) -> dict:
         response = llm.invoke(prompt_messages)
     except Exception:
         # 兜底：LLM 失败时返回 READY 信号（让 synth 节点写兜底答案）
-        response = AIMessage(content="READY")
+        response = AIMessage(content=SIGNAL_READY)
 
     return {
         "messages": [response],

@@ -9,7 +9,7 @@ import time
 
 from langchain_core.messages import AIMessage
 
-from agent.constants import MAX_ITER, MAX_REFL, TOTAL_TIMEOUT
+from agent.constants import INTERNAL_SIGNALS, MAX_ITER, MAX_REFL, TOTAL_TIMEOUT
 from agent.graph import build_graph
 from utils.logging import get_logger
 
@@ -41,10 +41,21 @@ def _get_graph():
 
 
 def _extract_answer(messages: list) -> str:
-    """从 messages 中提取最后一条 AIMessage 的内容作为答案。"""
+    """从 messages 中提取答案（跳过 iter 的内部信号）。
+
+    ⚠️ "倒着找最后一条 AIMessage"是不够的 —— iter 节点会往 messages 里塞内部信号
+    （"READY" / "已达迭代上限，结束" / "已达总时限，停止思考"），那些是给下游节点看的
+    流程标记，不是答案。图超时时直接停在 iter 的占位消息上，照搬就等于把
+    「已达总时限，停止思考」当成答案交给用户（项目现状.md §2.8 / F9a_x）。
+
+    返回空串表示"messages 里没有真答案"（调用方决定兜底话术）。
+    """
     for msg in reversed(messages):
-        if isinstance(msg, AIMessage):
-            return msg.content or ""
+        if not isinstance(msg, AIMessage):
+            continue
+        content = (msg.content or "").strip()
+        if content and content not in INTERNAL_SIGNALS:
+            return content
     return ""
 
 
@@ -101,6 +112,9 @@ def ask(
         return _error_response(debug)
 
     answer = _extract_answer(result["messages"])
+    if not answer:
+        # 图停在内部信号上（超时收摊）→ 给一句人话，别交白
+        answer = "回答超时：思考时间超过总时限"
 
     if not debug:
         return answer

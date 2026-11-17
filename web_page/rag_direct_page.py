@@ -32,7 +32,8 @@ def rag_direct_page():
                         timeout=60,
                     )
                     if r.status_code == 200:
-                        answer = r.json().get("answer", "(无答案)")
+                        # 后端 /rag 的契约是 ChatResponse{response}（api/api_rag.py）
+                        answer = r.json().get("response", "(无答案)")
                     else:
                         answer = f"HTTP {r.status_code}: {r.text}"
                 except Exception as e:

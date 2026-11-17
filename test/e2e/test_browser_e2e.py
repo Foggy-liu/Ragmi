@@ -100,25 +100,25 @@ def test_e3_settings_button_does_not_crash(page, streamlit_url, fake_backend):
     expect(page.locator(EXCEPTION)).to_have_count(0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P1-1: /rag 前端读 .get('answer')，后端返 'response' → 页面永远显示「(无答案)」",
-)
-def test_e4_kb_page_shows_no_answer(page, streamlit_url, fake_backend):
-    """知识库问答：假后端返回真实契约 {"response": ...} → 页面应显示「(无答案)」。
+def test_e4_kb_page_shows_answer(page, streamlit_url, fake_backend):
+    """知识库问答：假后端返回真实契约 {"response": ...} → 页面应显示该答案。
 
-    ⚠️ 假后端**必须**返回 response 而不是 answer —— 否则这条会意外 XPASS。
+    ⚠️ 假后端**必须**返回 response 而不是 answer —— 后端契约是 ChatResponse{response}。
+    （P1-1 修复前前端读 .get("answer")，页面永远显示「(无答案)」。）
+
+    ⚠️ 切页后必须**等标题变了**再碰输入框：旧页面的输入框在切页那一瞬还在 DOM 里，
+    等它可见会立刻返回，于是 fill() 打在被拆掉的旧元素上，消息永远发不出去
+    （实测页面上 0 条消息）。跟 E6 同一个套路。
     """
     open_page(page, streamlit_url)
     menu_frame(page).get_by_text("知识库问答").click()
+    expect(page.locator(HEADING).first).to_contain_text("知识库问答", timeout=60000)
 
-    box = page.locator(CHAT_INPUT)
-    expect(box).to_be_visible(timeout=60000)
-    box.fill("知识库里有什么")
-    box.press("Enter")
+    ask_question(page, "知识库里有什么")
 
     expect(page.locator(CHAT_MESSAGE)).to_have_count(2, timeout=60000)
-    expect(page.locator(CHAT_MESSAGE).nth(1)).to_contain_text("(无答案)")
+    expect(page.locator(CHAT_MESSAGE).nth(1)).to_contain_text(fake_backend.rag_answer)
+    expect(page.locator(CHAT_MESSAGE).nth(1)).not_to_contain_text("(无答案)")
 
 
 def test_e5_upload_shows_stats(page, streamlit_url, fake_backend):

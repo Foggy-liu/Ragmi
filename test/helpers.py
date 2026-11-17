@@ -13,6 +13,7 @@ import time
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
+from agent.constants import INTERNAL_SIGNALS
 from agent.runtime import RECURSION_LIMIT
 
 # ---------------------------------------------------------------------------
@@ -20,7 +21,9 @@ from agent.runtime import RECURSION_LIMIT
 # ---------------------------------------------------------------------------
 
 #: Agent 内部占位消息 —— 不该出现在最终答案里
-INTERNAL_PLACEHOLDERS = ("READY", "已达迭代上限，结束", "已达总时限，停止思考")
+#: 从 agent.constants 导入而不是复制一份：复制就会漂移（改了产品侧忘了改测试侧，
+#: "答案不是占位"这条断言就变成了永真）。
+INTERNAL_PLACEHOLDERS = tuple(sorted(INTERNAL_SIGNALS))
 
 #: 工具返回多段 chunk 时的分隔符（agent/tools/rag_tool.py:64）
 CHUNK_SEPARATOR = "\n\n---\n\n"
