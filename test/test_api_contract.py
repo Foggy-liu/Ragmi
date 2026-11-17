@@ -7,6 +7,7 @@ main.py:63 在模块级调 LLMmodel.create_minimax()，若在 patch 之后才 im
 假件会变成进程默认模型 → /chat /rag 变成"对着假件测假件"。
 """
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -229,3 +230,61 @@ def test_c10_same_name_is_skipped_unless_overwrite(client, stub_parser):
     finally:
         if doc.exists():
             doc.unlink()
+
+
+# ---------------------------------------------------------------------------
+# C11 · 依赖注入：RagModel 单例（P1-4）
+# ---------------------------------------------------------------------------
+
+class TestRagModelSingleton:
+    """`/rag` 的 RagModel 必须是 **app 级单例**（P1-4）。
+
+    FastAPI 的 `Depends` 缓存只在**单个请求内**有效，跨请求不复用；
+    而 `RagModel.__init__` 要新建一条 Milvus gRPC 连接（实测 ~0.9 秒）。
+    每个请求现建 = 每个请求都开一条连接、用一次就扔掉。
+    """
+
+    @staticmethod
+    def _request(state):
+        """造一个只有 `.app.state` 的假 Request。"""
+        return SimpleNamespace(app=SimpleNamespace(state=state))
+
+    def test_second_call_reuses_the_same_instance(self, monkeypatch):
+        """第二次拿到的必须是同一个对象，且只构造过一次。"""
+        import api.dependencies as deps
+
+        built = []
+
+        class FakeRag:
+            def __init__(self, model_manager):
+                built.append(model_manager)
+                self.is_ready = True
+
+        monkeypatch.setattr(deps, "RagModel", FakeRag)
+        state = SimpleNamespace(model_manager="MGR")
+
+        first = deps.get_rag_model(self._request(state))
+        second = deps.get_rag_model(self._request(state))
+
+        assert first is second
+        assert len(built) == 1
+
+    def test_failed_instance_is_not_cached(self, monkeypatch):
+        """连不上 Milvus（is_ready=False）→ **不缓存** → 下次请求重试。
+
+        否则启动期的一次抖动会让这个进程永远检索不了。
+        """
+        import api.dependencies as deps
+
+        class FakeRag:
+            def __init__(self, model_manager):
+                self.is_ready = False
+
+        monkeypatch.setattr(deps, "RagModel", FakeRag)
+        state = SimpleNamespace(model_manager="MGR")
+
+        first = deps.get_rag_model(self._request(state))
+        second = deps.get_rag_model(self._request(state))
+
+        assert first is not second
+        assert not hasattr(state, "rag_model")

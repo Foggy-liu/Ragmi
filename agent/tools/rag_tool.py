@@ -11,9 +11,9 @@
 from langchain_core.tools import tool
 
 from agent.constants import TOOL_TIMEOUT
-from agent.errors import AgentTimeoutError, AgentToolError
+from agent.errors import AgentTimeoutError, AgentToolError, is_timeout
 from agent.timeout import Timer
-from core.rags.rags import RagModel
+from core.rags.rags import RagModel, RetrievalError
 from utils.models.model_manager import ModelManager
 from utils.models.model_setting import LLMmodel
 
@@ -52,12 +52,23 @@ def rag_search(query: str) -> str:
     检索为空时返回空字符串（v2.2）：不塞中文兜底串，否则 status_tool_wrapper
     永远判成 success，"检索为空"这个信号就丢了。空串由 wrapper 记为 status="empty"，
     再由 agent 综合节点据此改写答案。
+
+    ⚠️ 检索**失败**（连不上 / 查询报错）不是"检索为空"——它抛 RetrievalError，
+    这里翻译成 AgentTimeoutError / AgentToolError，wrapper 才能记成
+    status="timeout" / "error" 而不是 "empty"（P2-7）。
     """
     model = _ensure_rag()
     try:
         chunks = Timer(TOOL_TIMEOUT).call(model.retrieve, query, top_k=5)
     except AgentTimeoutError:
         raise  # 已是归一化异常，原样上抛
+    except RetrievalError as e:
+        # 检索失败（P2-7）：按底层原因区分「超时」和「其他错误」——
+        # 超时可重试（retryable=true），其他错重试没意义。
+        cause = e.__cause__ if e.__cause__ is not None else e
+        if is_timeout(cause):
+            raise AgentTimeoutError(f"检索超时: {e}") from e
+        raise AgentToolError(f"检索失败: {e}") from e
     except Exception as e:
         # 底层异常（Milvus/Ollama 的各种错）→ 翻译成归一化异常
         raise AgentToolError(f"检索失败: {type(e).__name__}: {e}") from e

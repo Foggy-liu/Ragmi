@@ -24,13 +24,28 @@ class EmbeddingModel:
             self.yaml_config = yaml.safe_load(f)
 
         self.platform = platform or self.yaml_config["DEFAULT_EMBEDDING_MODEL"]["platform"]
-        self.model_name = model_name or self.yaml_config["DEFAULT_EMBEDDING_MODEL"]["model_name"]
+        self.model_name = model_name or self._resolve_model_name()
 
         self.platform_config = self._get_platform_config()
         self.model_defaults = self._get_model_defaults()
 
         params = self._merge_params(kwargs)
         self.embedding = self._init_client(params)
+
+    def _resolve_model_name(self) -> str:
+        """嵌入模型名的**唯一事实来源**。
+
+        优先级：环境变量 ``EMBEDDING_MODEL`` > YAML ``DEFAULT_EMBEDDING_MODEL.model_name``。
+
+        ⚠️ 索引端（``utils/txt_spliter/vector_main.py``）和检索端
+        （``core/rags/rags.py``）必须用**同一个**模型名 ——
+        向量空间对不上时 Milvus **不报错**（维度一样的话），只是检索结果全是噪声。
+        以前检索端硬编码 ``model='bge-large'``、索引端读环境变量，两边可以静默分叉。
+        """
+        env_name = os.environ.get("EMBEDDING_MODEL")
+        if env_name:
+            return env_name
+        return self.yaml_config["DEFAULT_EMBEDDING_MODEL"]["model_name"]
 
     def _get_platform_config(self):
         for plat in self.yaml_config.get("PLATFORMS", []):
@@ -64,7 +79,16 @@ class EmbeddingModel:
             base_url = params.get("base_url", "http://localhost:11434")
             if base_url.endswith("/v1"):
                 base_url = base_url[:-3]
-            return OllamaEmbeddings(model=self.model_name, base_url=base_url)
+            # ⚠️ OllamaEmbeddings 没有 timeout 字段，但 client_kwargs 会透传给
+            # ollama.Client → httpx → 真正给到底层连接一个上限（P2-8）。
+            # 以前 timeout 在 _merge_params 里算出来了却被这里丢掉 → 连接无界。
+            timeout = params.get("timeout")
+            client_kwargs = {"timeout": timeout} if timeout else {}
+            return OllamaEmbeddings(
+                model=self.model_name,
+                base_url=base_url,
+                client_kwargs=client_kwargs,
+            )
         else:
             raise ValueError(f"不支持的平台: {self.platform}")
 

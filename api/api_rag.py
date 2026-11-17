@@ -1,7 +1,7 @@
 # api/chat_api.py
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from .dependencies import get_model_manager
+from .dependencies import get_rag_model
 from core.rags.rags import RagModel
 
 apprag = APIRouter()
@@ -14,10 +14,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """聊天响应模型"""
     response: str
-
-def get_rag_model(model_manager=Depends(get_model_manager)) -> RagModel:
-    """获取 RAG 模型实例"""
-    return RagModel(model_manager)
 
 @apprag.post("/rag", response_model=ChatResponse)
 async def rag(

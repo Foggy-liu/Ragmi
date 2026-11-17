@@ -175,6 +175,32 @@ def test_f4_tool_failure_is_structured_and_graph_survives(fake_llm, fake_rag, gr
     assert "失败答案" in ai_contents(state["messages"])
 
 
+def test_f4b_retrieval_failure_is_error_not_empty(fake_llm, fake_rag, graph):
+    """P2-7：检索**失败** → status=error，**不是** empty。
+
+    修之前 `core/rags/rags.py` 把所有异常吞成 `[]`，
+    工具层只能记 `status="empty"` —— Agent 分不清
+    「知识库里没有这条」和「知识库挂了」，会拿着空素材硬答。
+    """
+    from core.rags.rags import RetrievalError
+
+    fake_rag.error = RetrievalError("Milvus 查询失败")
+    fake_llm.script.iter = [tool_call_message("call_1"), ready_message()]
+    fake_llm.script.synth = [AIMessage(content="失败答案")]
+    fake_llm.script.reflect = [END]
+
+    state = run_graph(graph)
+
+    entry = state["tool_status"]["call_1"]
+    assert entry["status"] == "error"
+    assert entry["code"] == "TOOL_ERROR"
+    assert entry["retryable"] is False
+
+    payload = json.loads(tool_messages(state["messages"])[0].content)
+    assert payload["code"] == "TOOL_ERROR"
+    assert "Milvus 查询失败" in payload["message"]
+
+
 def test_f5_iter_llm_crash_falls_back_to_ready(fake_llm, fake_rag, graph):
     """iter 的 LLM 崩 → 兜底 "READY" → synth 仍出答案，图不崩。"""
     fake_llm.script.iter = [RuntimeError("LLM 崩了")]

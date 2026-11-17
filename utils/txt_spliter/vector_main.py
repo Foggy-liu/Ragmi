@@ -7,12 +7,37 @@ import time
 import requests
 
 # 直连 Ollama HTTP API（不走 langchain_ollama 库 —— 该库在本机会被代理到错误端口）
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-EMBED_MODEL = os.environ.get("EMBEDDING_MODEL", "bge-large")
+#
+# ⚠️ 嵌入模型名 / base_url **不能在模块导入时读环境变量**：
+# 导入那一刻 .env 还没被 load_dotenv() 加载 → .env 里的 EMBEDDING_MODEL /
+# OLLAMA_BASE_URL 会被静默忽略（P3-9）。
+# 真正的解析放在 resolve_embed_settings()，且必须在 EmbeddingModel 构造**之后**
+# 调用（它的 __init__ 里会 load_dotenv）。
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 EMBED_BATCH_SIZE = 32  # 单次 /api/embed 请求的文档上限
 
 
-def ollama_embed_texts(texts, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL, batch_size=EMBED_BATCH_SIZE):
+def resolve_embed_settings(embed_model):
+    """返回 (model_name, base_url) —— 索引端与检索端共用的**唯一事实来源**。
+
+    优先级：环境变量 > YAML（``configs/model_config.yaml``）。
+    embed_model 必须已经构造好 —— 它的 ``__init__`` 里会 load_dotenv。
+
+    ⚠️ 两端模型名不一致时 Milvus **不会报错**（维度一样的话），
+    只会让检索结果全是噪声 —— 所以两边必须从这里取同一个值（P1-9）。
+    """
+    model = os.environ.get("EMBEDDING_MODEL") or embed_model.model_name
+    base_url = (
+        os.environ.get("OLLAMA_BASE_URL")
+        or embed_model.platform_config.get("api_base_url")
+        or DEFAULT_OLLAMA_BASE_URL
+    )
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3]
+    return model, base_url
+
+
+def ollama_embed_texts(texts, model, base_url, batch_size=EMBED_BATCH_SIZE):
     """分批调用 Ollama /api/embed，返回 list[list[float]]。
 
     为什么不用 langchain_ollama.OllamaEmbeddings：本机 ollama 库版本
@@ -33,7 +58,7 @@ def ollama_embed_texts(texts, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL, batch
     return all_vectors
 
 
-def ollama_embed_one(text, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL):
+def ollama_embed_one(text, model, base_url):
     """单条文本 embed（用于探测维度）。"""
     return ollama_embed_texts([text], model=model, base_url=base_url)[0]
 
@@ -41,6 +66,10 @@ def ollama_embed_one(text, model=EMBED_MODEL, base_url=OLLAMA_BASE_URL):
 def vector_split():
     # 1、初始化embedding管理类
     embed_model = EmbeddingModel.create_default()
+
+    # 1.5、解析嵌入模型名 / base_url（必须在 EmbeddingModel 构造之后 —— 它才会 load_dotenv）
+    embed_model_name, ollama_base_url = resolve_embed_settings(embed_model)
+    print(f"使用嵌入模型: {embed_model_name} @ {ollama_base_url}")
 
     # 2、初始化切分器
     splitter = spliter.Splitter()
@@ -67,7 +96,7 @@ def vector_split():
 
     # 8、获取一个 embedding 来确定维度
     sample_text = documents[0].page_content
-    sample_embedding = ollama_embed_one(sample_text[:50])
+    sample_embedding = ollama_embed_one(sample_text[:50], embed_model_name, ollama_base_url)
     dim = len(sample_embedding)
     print(f"Embedding 维度: {dim}")
 
@@ -85,7 +114,7 @@ def vector_split():
     all_texts = [doc.page_content for doc in documents]
     print(f"正在为 {len(all_texts)} 个文档片段生成 embedding...")
 
-    vectors = ollama_embed_texts(all_texts)
+    vectors = ollama_embed_texts(all_texts, embed_model_name, ollama_base_url)
     print(f"生成 {len(vectors)} 个向量")
 
     # 12、批量插入（分批避免内存问题）

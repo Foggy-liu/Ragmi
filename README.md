@@ -355,16 +355,17 @@ v2.2 的价值在别处 —— 稳定性从"会抛异常"变成 12/12 零异常�
 pytest -m "not slow and not e2e" -v   # 快回归（秒级，不连 Milvus、不调真 LLM、不开浏览器）
 pytest -m e2e -v --tracing=retain-on-failure   # 浏览器层（Playwright + 专用 Streamlit:8511）
 pytest -m slow -v                     # 真环境（真 MiniMax + 真 Milvus，慢且花钱）
-pytest -v                             # 全量（89 个收集项）
+pytest -v                             # 全量（103 个收集项）
 ```
 
-**4 层测试体系**（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层）。详见 [`docs/status/测试体系.md`](./docs/status/测试体系.md)。
+**4 层测试体系**（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层与检索层）。详见 [`docs/status/测试体系.md`](./docs/status/测试体系.md)。
 
 | 层 | 文件 | 测什么 | 条数 | 实测 |
 |---|---|---|---|---|
-| L2 流程 | `test/test_agent_flow.py` | 跑**真的 LangGraph 图**（假 LLM 剧本 + 假检索）：工具 4 态、两个循环刹车、三种超时时机、`ask()` 契约 | 16（+9 参数化不变式） | 25 passed |
-| L3 契约 | `test/test_api_contract.py` | `TestClient`：接口字段形状、缺字段 422、模型切换、上传路径穿越 / 类型白名单 / 同名覆盖 | 10 | 10 passed |
-| L2 工具 | `test/test_tools.py` | `calculator` 的 AST 白名单求值：算术 / 危险输入拒绝 / 畸形输入（**P1-2** 的回归护栏） | 22 | 22 passed |
+| L2 流程 | `test/test_agent_flow.py` | 跑**真的 LangGraph 图**（假 LLM 剧本 + 假检索）：工具 4 态、两个循环刹车、三种超时时机、`ask()` 契约 | 17（+9 参数化不变式） | 26 passed |
+| L3 契约 | `test/test_api_contract.py` | `TestClient`：接口字段形状、缺字段 422、模型切换、上传路径穿越 / 类型白名单 / 同名覆盖、依赖单例 | 12 | 12 passed |
+| L2 工具 | `test/test_tools.py` | `calculator` 的 AST 白名单求值（**P1-2** 回归护栏）+ `rag_search` 的异常归一化（**P2-7**） | 26 | 26 passed |
+| L2 检索 | `test/test_rag_model.py` | **"检索失败"和"检索为空"分得开吗**（**P2-7** 的回归护栏） | 7 | 7 passed |
 | L2 切分 | `test/test_splitter.py` | 纯函数切分：无内容丢失、块长上限、默认参数来自 YAML | 6 | 6 passed |
 | L4 浏览器 | `test/e2e/test_browser_e2e.py` | 进程外假后端 + 专用 Streamlit：发问 / 清空 / 上传统计 / 三页互切 / 后端 500 | 8 | 8 passed |
 | L4 冒烟 | `test/test_eval_smoke.py` | 真 MiniMax + 真 Milvus：算式必调工具、检索路由、工具失败不失控 | 4 | 4 passed（162 秒） |
@@ -374,7 +375,7 @@ pytest -v                             # 全量（89 个收集项）
 **`xfail` 已清零（2026-11-17）** —— 曾用 `xfail(strict=True)` 固化的 3 个缺陷全部修掉：
 F9a_x（超时兜底把内部占位当答案）、S5（`Splitter(max_chars)` 没生效，**P1-7**）、
 E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 `eval()` RCE）。
-现在快回归 **76 passed / 0 xfailed**。
+现在快回归 **90 passed / 0 xfailed**。
 
 **仍然没覆盖的**（别把绿色当成质量保证）：
 

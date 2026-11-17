@@ -95,9 +95,10 @@ Currently live test files:
 
 - `test/test_agent_timeout.py` — timeout/exception mechanism (11 cases, no Milvus or LLM needed).
 - `test/test_main_routes_covered.py` — AST scan of `api/*.py` + `main.py`, prevents unmounted router dead code (2 cases).
-- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (16 cases + a parametrized "no dangling tool_calls" invariant → 25 collected items).
-- `test/test_api_contract.py` — **L3 API contract layer**: `TestClient` + `dependency_overrides`. Field shapes, missing-field 422, model switching, and the upload validation logic (path traversal / type whitelist / same-name skip-or-overwrite) (10 cases).
-- `test/test_tools.py` — **L2 tool layer**: pure-function checks on the tool bodies. Currently covers `calculator`'s AST-whitelist evaluation (arithmetic, unsafe-input rejection, malformed input) — the regression net for the `eval()` RCE fix (22 cases, always run).
+- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, retrieval-failure ≠ retrieval-empty, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (17 cases + a parametrized "no dangling tool_calls" invariant → 26 collected items).
+- `test/test_api_contract.py` — **L3 API contract layer**: `TestClient` + `dependency_overrides`. Field shapes, missing-field 422, model switching, the upload validation logic (path traversal / type whitelist / same-name skip-or-overwrite), and the `RagModel` app-level singleton (12 cases).
+- `test/test_tools.py` — **L2 tool layer**: pure-function checks on the tool bodies. Covers `calculator`'s AST-whitelist evaluation (arithmetic, unsafe-input rejection, malformed input) — the regression net for the `eval()` RCE fix — plus `rag_search`'s exception normalization (26 cases, always run).
+- `test/test_rag_model.py` — **L2 retrieval layer**: the `core/rags/rags.py` failure semantics — "retrieval failed" raises `RetrievalError`, "retrieval empty" returns `[]`, and `/rag` stays resilient (7 cases, always run).
 - `test/test_splitter.py` — pure-function splitter checks (6 cases, always run).
 - `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks). Marked `@pytest.mark.slow` — excluded from the default fast run.
 - `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
@@ -106,12 +107,12 @@ Currently live test files:
 
 The four-layer system is documented in `docs/status/测试体系.md`; its design is
 `docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-17 the fast run is
-**76 passed / 0 xfailed** and the browser layer is **8 passed** — the three
+**90 passed / 0 xfailed** and the browser layer is **8 passed** — the three
 `xfail(strict=True)` markers that used to pin known defects (F9a_x / S5 / E4) are gone,
 because P1-1, P1-2 and P1-7 are fixed.
 
 **Coverage gap to keep in mind**: the fast suite now *does* run `graph.invoke()` — the Agent's
-non-timeout routing branches, counter-reset semantics, and reflect decisions have 16 pytest
+non-timeout routing branches, counter-reset semantics, and reflect decisions have 17 pytest
 cases in `test/test_agent_flow.py`, plus a parametrized regression net asserting
 "dangling `tool_calls` == 0". What is **not** covered: the reflect prompt's hard constraint
 ("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
@@ -154,6 +155,18 @@ The direct paths use the application-level `ModelManager` initialized in `main.p
 
 - `core/chat/chat.py` performs direct model conversation.
 - `core/rags/rags.py:RagModel.chat()` retrieves chunks, builds a grounded prompt, invokes the selected model, and stores history through the global `MessageManager`.
+
+FastAPI's `Depends` cache is **per request only** — it never spans requests. So a cheap
+dependency (`get_chat_model`) may be built per request, but `get_rag_model` is an **app-level
+singleton** on `app.state.rag_model`: `RagModel.__init__` costs ~0.45 s (measured 2026-11-17 —
+**~0.42 s of it is building the embedding HTTP client**, i.e. two httpx clients each building
+an SSL context; plus YAML reads and two health-check RPCs), while the actual retrieval only
+takes ~0.10 s. A failed connection is **not cached**, so the next request retries.
+See `api/dependencies.py`.
+
+Note: this is **not** "a new Milvus gRPC connection per request" — pymilvus 2.6 has its own
+`ConnectionManager` that caches the underlying gRPC channel per address (a second client
+costs 0.000 s). The repeated cost is the embedding client plus config/health-check overhead.
 
 The Agent path is intentionally decoupled from `app.state.model_manager`:
 
@@ -323,16 +336,23 @@ class AgentState(TypedDict, total=False):
 
 ### 已知遗留
 
-- **`empty` 状态不精确**：`core/rags/rags.py` 检索失败也返回 `[]`，
-  工具侧区分不了"检索为空"和"检索失败"。修它会连带改 `/rag` 路径行为，
-  也是 `retryable` 精细化的前置。
-- **`core/rags/rags.py` 的 Ollama 调用仍不限时**：`OllamaEmbeddings` 没传 timeout。
-  工具外层的 `Timer` 兜住了图不再卡死，但底层连接本身仍无界。
 - **Agent 没有多轮记忆**：`runtime.ask()` 每次 invoke 都传全新的
   `{"messages": [HumanMessage(question)]}`；`session_id` → `thread_id` 传了但图没有
   checkpointer，`thread_id` 没人读。三个 LLM 节点也从不把 `state["messages"]` 发给 LLM
   （每次从零拼 prompt：原问题 + 工具素材 + 计数器）。做记忆前要先处理 iter 的占位消息
   （`"READY"` / `"已达迭代上限，结束"`）—— 它们会一起进历史。
+- **`retryable` 还不能细分**：工具层目前只拿到 `AgentToolError` 这一个"其他错误"的桶，
+  区分不出限流/服务不可用（可重试）与参数错/代码 bug（不可重试）。前置已具备
+  （`RetrievalError` 保留 `__cause__`），还需要 `RetrievalError` 带更细的错误码。
+
+> 已修复（2026-11-17）：`empty` 状态不精确 —— `core/rags/rags.py` 现在抛 `RetrievalError`
+> 表示"检索失败"，`[]` 只表示"检索为空"；`rag_tool.py` 把它翻译成
+> `AgentToolError` / `AgentTimeoutError`。
+> 详见 `docs/status/项目现状.md` P2-7。
+>
+> 已修复（2026-11-17）：Ollama 调用不限时 —— `EmbeddingModel._init_client` 把
+> `PLATFORMS.ollama.timeout`（60 s）透传给 `OllamaEmbeddings(client_kwargs={"timeout": ...})`
+> → `ollama.Client` → httpx。工具外层的 `Timer` 仍是"不再等"，底层连接现在自己也有上限。
 
 > 已修复（2026-11-15，O-006）：`tool_calls` 悬空 —— `iter_node` 的边界检查改成
 > `iter_count + 1 >= MAX_ITER`，最后一轮不再调 LLM，从根上不产生悬空消息。
@@ -343,9 +363,17 @@ class AgentState(TypedDict, total=False):
 `core/rags/rags.py` owns the reusable retrieval pipeline:
 
 1. Create the configured embedding/Milvus settings through `EmbeddingModel`.
-2. Embed queries with `langchain_ollama.OllamaEmbeddings` using `bge-large` at `localhost:11434`.
+2. Reuse `EmbeddingModel.embedding` (the `langchain_ollama.OllamaEmbeddings` client) to embed
+   queries — **do not construct a second one**; the model name and base URL come from the
+   config, and the client carries a 60 s timeout.
 3. Search the configured Milvus collection/alias for the top five chunks.
 4. Either return chunks through `retrieve()` or build a grounded prompt and generate through `chat()`.
+
+**The embedding model name has one source of truth**: `EmbeddingModel._resolve_model_name()`
+(`EMBEDDING_MODEL` env var > YAML `DEFAULT_EMBEDDING_MODEL.model_name`). The indexing side
+reads the same value through `utils/txt_spliter/vector_main.py::resolve_embed_settings()`.
+A mismatch between the two sides does **not** raise — `bge-large` and `bge-m3` are both
+1024-dimensional — it just makes every retrieval return noise.
 
 `utils/txt_spliter/vector_main.py` rebuilds vector data safely:
 
@@ -356,7 +384,7 @@ class AgentState(TypedDict, total=False):
 5. Atomically create or move the stable alias from `configs/model_config.yaml`.
 6. Leave the old collection intact for manual cleanup or rollback.
 
-Do not replace the direct Ollama HTTP embedding path in `vector_main.py` with `langchain_ollama` without investigating its documented local proxy/port issue. Note that query-time retrieval in `core/rags/rags.py` still uses `langchain_ollama`, so indexing and querying currently use different clients for the same embedding model.
+Do not replace the direct Ollama HTTP embedding path in `vector_main.py` with `langchain_ollama` without investigating its documented local proxy/port issue. Note that query-time retrieval in `core/rags/rags.py` still uses `langchain_ollama`, so indexing and querying use different *clients* for the same embedding *model* — but they must agree on the model name.
 
 ## Configuration
 
@@ -381,6 +409,10 @@ Model selection: direct chat/RAG use the managed current model, while Agent node
 - Never use `.with_config({"timeout": N})` — it is dead code. Pass `timeout=` when constructing the client.
 - Keep `api/api_agent.py`'s endpoint as a plain `def`. `ask()` is blocking; `async def` would stall the whole FastAPI event loop.
 - Normalize tool-layer exceptions to `AgentTimeoutError` / `AgentToolError` exactly once, in the tool itself. Downstream layers should not re-translate third-party exception types.
+- **Retrieval failure is not retrieval emptiness.** `core/rags/rags.py` raises `RetrievalError` when the store is down or the query fails, and returns `[]` only when there is genuinely nothing to return. `agent/tools/rag_tool.py` translates it (`__cause__` is a timeout → `AgentTimeoutError`, else `AgentToolError`). Never collapse the two back into `[]` — that is what makes `tool_status` useless.
+- The embedding model name comes from `EmbeddingModel._resolve_model_name()` only (`EMBEDDING_MODEL` env var > YAML). Never hardcode `bge-large` — a silent mismatch with the indexing side returns noise, not an error.
+- Do not build a second `OllamaEmbeddings` in `core/rags/rags.py`; reuse `EmbeddingModel.embedding` so the timeout and the model name stay in one place.
+- `get_rag_model` (`api/dependencies.py`) is an **app-level singleton** on `app.state.rag_model`. FastAPI's `Depends` cache does not span requests, so building a `RagModel` per request costs a new Milvus gRPC connection every time.
 - Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
 - `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
 - When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.

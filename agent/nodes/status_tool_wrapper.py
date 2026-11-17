@@ -50,9 +50,12 @@ from agent.errors import AgentError, AgentTimeoutError
 #
 # retryable 语义 = "这个失败重试有没有意义"。
 # 当前只有 timeout 为 True；更细的分类（限流/服务不可用 → 可重试，
-# 参数错/代码 bug → 不可重试）暂时做不了，因为 core/rags/rags.py 的
-# retrieve() 用 `except Exception: return []` 把原始异常吞了，工具层
-# 根本看不到底层错误类型。要细分得先改那个契约（会连带影响 /rag 路径）。
+# 参数错/代码 bug → 不可重试）暂时做不了 —— 工具层目前只拿到
+# `AgentToolError` 这一个"其他错误"的桶，看不出底层到底是限流还是参数错。
+#
+# ✅ 2026-11-17（P2-7）：`core/rags/rags.py` 的 retrieve() 不再把异常吞成 []，
+# 改为抛 RetrievalError → 工具层能区分「超时」（→ AgentTimeoutError，可重试）
+# 和「其他错误」（→ AgentToolError）。再细分需要 RetrievalError 带更细的错误码。
 STATUS_META: dict[str, tuple[str, bool, str]] = {
     "success": ("OK", False, ""),
     "empty": ("EMPTY_RESULT", False, "工具返回空内容"),
