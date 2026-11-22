@@ -1,6 +1,7 @@
 # test/ 目录说明
 
-> **实测日期：2026-11-15 / 目录整理 + 4 层测试体系落地：2026-11-16 / 债务清零 + 新增工具层：2026-11-17**。
+> **实测日期：2026-11-15 / 目录整理 + 4 层测试体系落地：2026-11-16 / 债务清零 + 新增工具层：2026-11-17
+> / 过时脚本移出版本库 + 离线评估迁到 `test/eval/`：2026-11-22**。
 > 下面每一行的"结果"都是实跑出来的，不是推断。
 >
 > **这个文件是 `test/` 的唯一索引**。当前测试体系的完整设计与落地状态见
@@ -27,22 +28,31 @@ test/
 │   ├── test_browser_e2e.py     #   E1–E8（标 e2e，假后端）
 │   ├── real_stack_check.py     #   真栈全接口体检（**非 pytest**，见下）
 │   └── _artifacts/             #   真栈产物（截图 + HTML 报告，已 gitignore）
-├── probes/                     # 手动探针脚本（非 pytest）
-├── archive/                    # 过时测试脚本的只读归档（不收集）
-│   ├── scripts/                #   8 个 v1/v2.1 脚手架
-│   └── data/                   #   3 个历史跑分快照
+├── eval/                       # 离线工具路由评估（**非 pytest**，唯一活着的离线评估）
+│   ├── run_agent_eval.py       #   跑 12 个 case 出路由准确率 + 稳定性
+│   ├── data/
+│   │   ├── agent_test_cases.json    #   评估集（12 个 case）
+│   │   └── agent_eval_results.json  #   最新跑分快照（2026-11-18：75.0% = 9/12）
+│   └── README.md               #   跑法 + 数字怎么读
+├── probes/                     # 一次性探针脚本（**已 gitignore，不上传仓**）
+├── archive/                    # 过时测试脚本的只读归档（**已 gitignore，不上传仓**）
 └── fixtures/                   # 手工测试素材（sample.txt 已进版本库）
 ```
+
+> ⚠️ **`probes/` 与 `archive/` 都不进版本库**（2026-11-22 起）—— 它们的内容已被 pytest 用例
+> 取代，留着只会让人误以为是现行测试。**干净 clone 看不到这两个目录**。
+> 需要历史脚本时看本地工作区，或 `git log -- test/archive/`。
+> 唯一活着的离线评估已从 `archive/scripts/` 迁到 **`eval/`**（2026-11-22）。
 
 **收集规则**（`pytest.ini`）：
 
 ```ini
 testpaths = test
 python_files = test_*.py
-norecursedirs = archive probes .* build dist node_modules venv __pycache__
+norecursedirs = archive probes eval .* build dist node_modules venv __pycache__
 ```
 
-→ `test/probes/` 与 `test/archive/` **永不收集**。
+→ `test/probes/`、`test/archive/`、`test/eval/` **永不收集**。
 
 **marker**：`slow`（需真实 Milvus/Ollama/MiniMax）、`e2e`（浏览器）。
 
@@ -85,8 +95,7 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 | `test_main_routes_covered.py` | `test_every_router_is_imported_and_mounted` | `api/*.py` 每个 router 都必须被 `main.py` import **且** 挂载 | ✅ |
 | | `test_no_orphan_router_import` | 反向检查：没有"import 了却不挂载"的孤儿 router | ✅ |
 
-> ⚠️ **`test/test_agent_timeout.py` 还没进 git**（2026-11-15 新建，一直是 untracked）。
-> 这 11 个用例是当前唯一的核心回归网 —— 提交新测试体系时**务必一并 `git add`**。
+> ✅ 这 11 个用例**已进版本库**（2026-11-16 起）。
 
 ### B 类 · 慢用例（1 个，通过但极慢）
 
@@ -96,7 +105,7 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 
 实测输出：`1667` 个片段 → alias `txt_data` → `txt_data_1794845929`，`query` 返回 10 行。
 
-**为什么这么慢**：每次跑都要把 `txt/` 下 22 个文件（1.1 MB）重新切成 1667 块并**全量重新 embed**
+**为什么这么慢**：每次跑都要把 `txt/` 下 33 个文件（2.0 MB）重新切成 1667 块并**全量重新 embed**
 （bge-large，1024 维，CPU 推理）。实测单批 32 块 ≈ 18 秒 → 光 embedding 就 ~16 分钟。
 它不是"每次都该跑"的用例，是**改了摄取链路后跑一次**的验收用例。
 
@@ -108,7 +117,14 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 ### C 类 · 新增 4 层测试体系（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层与检索层）
 
 `pytest -m "not slow and not e2e" -v`
-→ **90 passed, 13 deselected in 15.39s**（**0 xfailed**）
+→ **90 passed, 13 deselected, 0 xfailed**
+
+> ⚠️ **耗时依赖 Milvus 在不在**（实测 2026-11-22 两次）：
+> **Milvus 不可达 → 108.34 秒 / 113.34 秒**；**Milvus 在线 → 8.60 秒**。
+> 慢的不是用例，是 `test_api_contract.py` 的 **12 个 setup，每个 ~11 秒** ——
+> `main.py` 的 lifespan 每次启动都探一次 Milvus（`MilvusClient.list_collections()`），
+> **Milvus 不通时这次探活阻塞约 10–11 秒**（实测），而 `TestClient` 每个用例都重新触发 lifespan。
+> 看到"跑了一分多钟"先查 Milvus 是不是没起，不要以为用例变慢了。
 
 | 文件 | 层 | 用例 | 测什么 | 结果 |
 |---|---|---|---|---|
@@ -117,7 +133,7 @@ pytest -v                             # 全量（含 25 分钟的向量切分）
 | `test_splitter.py` | L2 切分 | **6** | 纯函数：空文本、单块、每块非空且 ≤300、**无内容丢失**、`max_chars` 真的生效、**默认参数来自 YAML** | ✅ **6 passed** |
 | `test_tools.py` | L2 工具 | **26** | `calculator` 的 AST 白名单求值：算术 8 条 + 危险输入 10 条（`__import__` / `open` / `().__class__` / 字符串 / `True+1` / 变量名 / 大指数 / 长表达式 / 除零 / 语法错）+ 畸形输入 4 条参数化（**P1-2 的回归护栏**）；+ `rag_search` 异常归一化 4 条（**P2-7**） | ✅ **26 passed** |
 | `test_rag_model.py` | L2 检索 | **7** | `core/rags/rags.py` 的失败语义：**检索失败抛 `RetrievalError`**（保留 `__cause__`）、**检索为空才返回 `[]`**、`/rag` 直连链路检索失败仍返回 200（**P2-7** 的回归护栏） | ✅ **7 passed** |
-| `test_eval_smoke.py` | L4 真环境 | **4**（标 `slow`） | 真 MiniMax + 真 Milvus：算式必调工具、问候有答案、知识库题走 `rag_search`、工具失败后不失控 | ✅ **4 passed**（实测 162 秒；S3/S4 天然 flaky） |
+| `test_eval_smoke.py` | L4 真环境 | **4**（标 `slow`） | 真 MiniMax + 真 Milvus：算式必调工具、问候有答案、知识库题走 `rag_search`、工具失败后不失控 | ✅ **4 passed**（实测 74.17 秒；S3/S4 天然 flaky） |
 
 ### D 类 · 浏览器 E2E（8 条，标 `e2e`）
 
@@ -149,7 +165,29 @@ python -m playwright install chromium-headless-shell
 
 ## 三、非 pytest 内容
 
-### `probes/` —— 手动探针（3 个，全部通过）
+### `eval/` —— 离线工具路由评估（**非 pytest**，2026-11-22 从 `archive/` 迁出）
+
+`test/` 下**唯一活着的离线评估**。跑 12 个 case，量 Agent"该不该调 `rag_search`"的
+路由准确率 + 稳定性。
+
+```bash
+cd D:/PythonProject/ragmi
+PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py            # 真 LLM
+PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock     # reflect 用假 LLM
+```
+
+两种模式都要真 MiniMax key，**都花钱**（`--mock` 只省 reflect 那一步）。
+
+| 文件 | 内容 | 状态 |
+|---|---|---|
+| `eval/run_agent_eval.py` | 评估入口 | ✅ 活着（2026-11-18 修好四处失效） |
+| `eval/data/agent_test_cases.json` | 12 个 case（query + 期望路由） | ⚠️ **口径是 v1 二值**（`expected_tool` 只有 chat/rag，没有 calculator/weather/web_search）→ 数字不可当基线，见 `docs/status/项目现状.md` §8 P0-1 |
+| `eval/data/agent_eval_results.json` | 最新跑分快照 | ✅ **2026-11-18：路由准确率 75.0%（9/12）、稳定性 12/12、21 次工具调用全 `success`、中位耗时 25.79 秒** |
+
+> ⚠️ **75.0% 低于 90% 的合格线**。2026-11-15 是 83.3%（10/12），差异**全部来自 T07 一次翻转**
+> —— **LLM 路由本身有随机性**，两个数都只是单次采样，不是基线。
+
+### `probes/` —— 手动探针（3 个，**已 gitignore，不上传仓**）
 
 文件名不匹配 `python_files = test_*.py`，需从仓库根目录直接跑。
 
@@ -162,9 +200,9 @@ python -m playwright install chromium-headless-shell
 > `probes/README.md` 里记的是"悬空 0 / 总调用 5"，当天复跑是 4 —— 次数随 LLM 决策浮动，
 > **关键指标是"悬空 = 0"**，不是总数。
 
-> **待办**：这 3 个探针发现的两个 bug 修完**没有变成 pytest 用例**。新测试体系落地后，
-> 探针改写成 pytest（`test_agent_flow.py` 的 F1b + 公共不变式），
-> 然后把 `probes/` 整个并入 `test/archive/`。
+> ✅ 这 3 个探针发现的两个 bug **已转成 pytest 用例**（`test_agent_flow.py` 的 F1b +
+> 公共不变式"悬空 tool_calls == 0"）。因此 `probes/` **2026-11-22 起不再进版本库** ——
+> 只留本地做历史参照，干净 clone 看不到。
 
 ### `e2e/real_stack_check.py` —— 真栈全接口体检（**非 pytest**，2026-11-17 新增）
 
@@ -186,7 +224,8 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
 # 可覆盖地址：E2E_API=http://127.0.0.1:8000  E2E_FRONTEND=http://localhost:8501
 ```
 
-**实测结果（2026-11-17）：19 条全部通过，0 失败，耗时 74 秒**（A 组 14 + B 组 5）。
+**实测结果（2026-11-17）：19 条全部通过，0 失败，耗时 74 秒**（A 组 14 + B 组 5）；
+**2026-11-18 复测同样 19/19 通过，耗时 64 秒**。
 
 - **A 组（14 条）· 接口**：从浏览器页面上下文里发 `fetch()` → **走真实浏览器网络栈，CORS 一并验了**。
   `/debug/simple`、`/available`、`/current_model`、`/switch_model`（失败分支 + 成功分支**并在 finally 里还原模型**）、
@@ -208,23 +247,27 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
 3. **取正文要限定 `stChatMessageContent`** —— 直接取整条消息的 `innerText` 会把 Material 图标名
    （`smart_toy` / `face`）算进来，误判成"有内容"。
 
-### `archive/` —— 过时测试脚本归档（11 个文件）
+### `archive/` —— 过时测试脚本归档（**已 gitignore，不上传仓**）
 
-不收集。逐文件实测状态、跑法和三个数据损坏坑见 [`archive/README.md`](./archive/README.md)。
+不收集。逐文件实测状态、跑法和三个数据损坏坑见本地 `archive/README.md`。
 
-| 文件 | 测什么 | 实测结果 |
+> ⚠️ **2026-11-22 起这个目录不再进版本库**。里面一半能跑一半不能（LangSmith 那几个直接 401 /
+> ImportError），留在仓里只会让人误以为是现行测试。**干净 clone 看不到这个目录**，
+> 需要历史脚本时看本地工作区或 `git log -- test/archive/`。
+
+| 文件 | 测什么 | 实测结果（2026-11-15） |
 |---|---|---|
-| `archive/scripts/run_agent_eval.py` | 跑 12 个 case 出工具路由准确率 | ⚠️ **默认（真实 LLM）模式能跑通 12/12 case**（需 `PYTHONPATH` 指向仓库根）；`--mock` 模式 ImportError |
-| `archive/scripts/run_v1_baseline.py` | 走 HTTP 打 `/agent/chat`，拿 v1 baseline | ⚠️ **能跑，但后端没起时会把 `data/v1_baseline_results.json` 覆写成 0/12 = 0.0%**（实测踩过，已 `git checkout` 还原） |
+| ~~`archive/scripts/run_agent_eval.py`~~ | — | ✅ **已迁到 `eval/run_agent_eval.py`**，2026-11-18 修好四处失效 |
+| `archive/scripts/run_v1_baseline.py` | 走 HTTP 打 `/agent/chat`，拿 v1 baseline | ⚠️ **能跑，但后端没起时会把 `data/v1_baseline_results.json` 覆写成 0/12 = 0.0%**（实测踩过） |
 | `archive/scripts/retry_failed_cases.py` | 重跑上轮失败 case | ⚠️ **能跑，但只是读缓存的 `data/v1_baseline_results.json` 重算并重印**，不是新测量 |
 | `archive/scripts/langsmith_setup.py` | 把 12 个 case 传成 LangSmith Dataset | ❌ **401 Unauthorized** `Invalid token` |
 | `archive/scripts/langsmith_evaluators.py` | 两个 evaluator 纯函数 | ✅ import OK，`tool_choice_evaluator` / `answer_keyword_evaluator` 都在 |
 | `archive/scripts/langsmith_eval.py` | 用 LangSmith 跑 evaluate | ❌ `ModuleNotFoundError: No module named 'test.langsmith_evaluators'` |
 | `archive/scripts/evil_proxy.py` | 假代理：拦 `/api/tokenize` 返 502，其它透传 | ✅ 正常（实测：透传 200 / 拦截 502）。**与 Agent 无关** |
 | `archive/scripts/repro_embed_clients.py` | 对比直连 Ollama HTTP vs `langchain_ollama` 的 4 条路径 | ✅ **当前环境 4/4 全过**（无代理干扰）。**与 Agent 无关** |
-| `archive/data/agent_test_cases.json` | 12 个 case（v1 时代设计，`expected_tool` 只有 chat/rag 二值，**没有 calculator / weather / web_search**，所以口径已过时） | ✅ 数据完整 |
-| `archive/data/agent_eval_results.json` | v2.1 时代快照（92%），保持原样 | ✅ |
-| `archive/data/v1_baseline_results.json` | v1 baseline（75%，9/12，平均 48.28s），保持原样 | ✅ |
+| ~~`archive/data/agent_test_cases.json`~~ | — | ✅ **已迁到 `eval/data/`** |
+| ~~`archive/data/agent_eval_results.json`~~ | — | ✅ **已迁到 `eval/data/`**（内容也更新为 2026-11-18 的 75.0% 快照） |
+| `archive/data/v1_baseline_results.json` | v1 baseline（75%，9/12，平均 48.28s） | ✅ 只留本地 |
 
 ### `fixtures/` —— 手工测试素材
 
@@ -245,11 +288,15 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
 3. **真实检索链路没被 *pytest* 自动验证** —— L2 层用的是**假检索**，`core/rags/rags.py` 的真实
    `retrieve()`（Milvus + Ollama embedding）只有 `test_vector_split.py` 那一条 25 分钟的慢用例碰到。
    （`e2e/real_stack_check.py` 会真的走一遍检索 —— 但它不是 pytest 用例，跑它要花钱且要真服务全在位。）
-4. **`empty` 与"检索失败"仍分不开** —— 工具层现在**能**测到 `empty` 状态（假检索返回空串），
-   但根因还在：`core/rags/rags.py` 的 `retrieve()` 用 `except Exception: return []`
-   把异常吞了，工具侧区分不了"检索为空"和"检索失败"。这是 `retryable` 精细化的前置。
+4. **`retryable` 还不能细分** —— ✅ "检索失败 ≠ 检索为空"已经修好（P2-7，2026-11-17：
+   `core/rags/rags.py` 现在抛 `RetrievalError`，`[]` 只表示真的没查到）。
+   但工具层只拿到 `AgentToolError` 这一个"其他错误"的桶，
+   区分不出限流/服务不可用（可重试）与参数错/代码 bug（不可重试）。
 5. **多轮记忆没测** —— `session_id` → `thread_id` 传了但图没有 checkpointer，
    多轮持久化**未实现**，没有可测的东西。
+6. **代码覆盖率不是全量**（实测 2026-11-22，`--cov=.`）：`agent/` **91%**、全项目 **56%**。
+   低覆盖集中在摄取（`utils/docs/` 11~20%）和 Streamlit 页面（`web_page/` 0%，
+   只被浏览器 E2E 点到、不在 pytest 覆盖范围内）。
 
 ---
 
