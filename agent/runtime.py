@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 # 最坏情况 = 每轮 re_iterate 步数 × reflect 轮数
 #   每轮：iter/tools 交替最多 2*MAX_ITER 步 + synth + reflect = 2*MAX_ITER + 2
 #   轮数：reflect 最多被调用 MAX_REFL+1 次（最后一次进 reflect 时 count 已达上限，强制 end）
-# 默认 25 不够（MAX_ITER=3/MAX_REFL=3 时最坏 28 步）→ 撞 GraphRecursionError，
+# 默认 25 不够（MAX_ITER=3/MAX_REFL=3 时最坏 8×4 = 32 步）→ 撞 GraphRecursionError，
 # 表现为 ask() 兜底成"agent 调用异常"，而不是给出答案。
 _STEPS_PER_ROUND = 2 * MAX_ITER + 2
 RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10
