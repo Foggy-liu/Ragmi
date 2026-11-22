@@ -86,11 +86,11 @@ Docker 部署，不占本地内存。Embedding 用 `bge-large`（1024 维），�
 
 ### 智能文本切分
 
-两阶段：LangChain 机械切分（代码里硬编码 `chunk_size=300` / `overlap=30`）→ 小片段智能合并
-（< 80 字符的碎片并入下一块，上限 300 字符），避免语义碎片化。
+两阶段：LangChain 机械切分 → 小片段智能合并（< 80 字符的碎片并入下一块，上限 300 字符），避免语义碎片化。
 
-> ⚠️ `configs/model_config.yaml` 里的 `chunk_size: 280` **从未被读取** —— 切分参数实际写死在
-> `utils/txt_spliter/spliter.py`。改 YAML 不生效。
+> 切分参数的**唯一来源**是 `configs/model_config.yaml` 的 `EMBEDDING_CONFIG.text_splitter`
+> （`chunk_size: 300` / `chunk_overlap: 30`），由 `utils/txt_spliter/spliter.py` 读取。
+> **改 YAML 会生效** —— `test/test_splitter.py::test_s6_default_comes_from_yaml` 钉着这一点。
 
 ---
 
@@ -155,13 +155,17 @@ ragmi/
 │   ├── test_main_routes_covered.py # 路由挂载回归（AST 扫描）
 │   ├── test_agent_flow.py         # L2 Agent 流程层（假 LLM + 假检索）
 │   ├── test_api_contract.py       # L3 API 契约层（TestClient）
+│   ├── test_tools.py              # L2 工具层（AST 白名单 + 异常归一化）
+│   ├── test_rag_model.py          # L2 检索层（检索失败 ≠ 检索为空）
 │   ├── test_splitter.py           # L2 切分层（纯函数）
 │   ├── test_eval_smoke.py         # L4 真环境冒烟（slow）
 │   ├── test_vector_split.py       # vector_split() 端到端（slow）
 │   ├── conftest.py + helpers.py + fake_backend.py  # 公共工具层（假 LLM/假检索/假后端）
 │   ├── e2e/                       # L4 浏览器层（Playwright，标 e2e）
-│   ├── probes/                   # 手动探针脚本（非 pytest）
-│   └── archive/                  # 过时测试脚本的只读归档（scripts/ + data/）
+│   ├── eval/                      # 离线工具路由评估（非 pytest，唯一活着的离线评估）
+│   │   ├── run_agent_eval.py      #   跑 12 个 case 出路由准确率
+│   │   └── data/                  #   评估集 + 最新跑分快照
+│   └── probes/ + archive/         # 过时脚本与一次性探针（**只留本地，不上传仓**）
 ├── configs/
 │   ├── agent_config.yaml      # MAX_ITER / MAX_REFL / timeout.{llm,tool,total}
 │   └── model_config.yaml      # 平台 / 模型默认值 / 切分 / Milvus
@@ -171,6 +175,15 @@ ragmi/
 ├── docker-compose.yml
 └── requirements.txt
 ```
+
+### 想读懂这份代码？
+
+| 想知道 | 看哪份 |
+|---|---|
+| 代码怎么串起来的、按什么顺序读 | [`docs/status/项目全景图.md`](./docs/status/项目全景图.md) —— 30 分钟阅读顺序 + 两条数据流 + 14 条不能破的不变量 + 风险地图 |
+| 这项目**能做到什么程度** | [`docs/status/项目能力与边界.md`](./docs/status/项目能力与边界.md) —— 已做到的 12 条（带实测证据）/ 量化上限 / 明确做不到的 10 条 / 生产化还差几项 |
+| 现在有什么洞、下一步做什么 | [`docs/status/项目现状.md`](./docs/status/项目现状.md) —— §8 是 P0–P3 问题清单 |
+| 测试到底测了什么 | [`docs/status/测试现状.md`](./docs/status/测试现状.md) + [`test/README.md`](./test/README.md) |
 
 ---
 
@@ -331,29 +344,35 @@ MiniMax 收到这种消息会直接 **HTTP 400**（`invalid params, tool call an
 ## 评估结果
 
 > **诚实说明**：12-case 评估集本身是 v1 时代设计（`expected_tool` 只有 chat/rag 二值，
-> 没跟上 v2.2 的 4 个工具），归档在 `test/archive/data/`。
-> 2026-11-15 用它**实跑了一遍 v2.2**，结果如下 —— 评估集口径待修，但数字是真的。
+> 没跟上 v2.2 的 4 个工具），在 `test/eval/data/agent_test_cases.json`。
+> 评估脚本 2026-11-18 修好四处失效后重新实跑，结果如下 —— **评估集口径待修，但数字是真的**。
 
 历史数据（MiniMax + Milvus 实测）：
 
-| 指标 | v1 baseline | v2 baseline | v2.1 (with Reflection) | **v2.2（2026-11-15 实测）** |
+| 指标 | v1 baseline | v2 baseline | v2.1 (with Reflection) | **v2.2（2026-11-18 实测）** |
 |------|------------|-------------|------------------------|---------------------------|
-| 总准确率 | 75% | 92% | 91.7%（持平） | **83.3%**（脚本口径 66.7%） |
-| RAG 类 | — | 80% | 80% (4/5) | — |
-| Chat 类 | — | 100% | 100% (7/7) | — |
-| 反思触发率 | 0 | 0 | 1 次/case | 1 次/case |
+| 总准确率 | 75% | 92% | 91.7%（持平） | **75.0%（9/12）** |
+| RAG 类 | — | 80% (4/5) | 80% (4/5) | 80% (4/5) |
+| Chat 类 | — | 100% (7/7) | 100% (7/7) | 71.4% (5/7) |
 | **稳定性（0 异常）** | — | — | — | **12/12 = 100%** |
+| 反思最终决策 | — | — | — | 全部 `end`（12/12） |
+| 反思轮数分布 | — | — | — | 1 轮 ×10 / 2 轮 ×2 |
+| 工具调用总次数 | — | — | — | 21 次，**全部 `success`** |
+| 单 case 中位耗时 | 48.28 秒 | — | — | **25.79 秒** |
 
-**v2.2 的 66.7% 是脚本口径失真**：脚本把"调了任何工具"都记成 `rag`，而 T02 实际调的是
-`calculator`、T09 实际调的是 `weather` —— **路由是对的**，被误判成错。逐 case 复查后
-真正错的只有 2 个：
+**2026-11-15 是 83.3%（10/12），2026-11-18 是 75.0%（9/12）** —— 差异**全部来自 T07 一次翻转**
+（"Python 的 list 和 tuple 有什么区别"该不该检索）。**LLM 路由本身有随机性**，
+所以这两个数都是**单次采样**，不能当基线用。要真基线得重建评估集 + 接 CI（见"后续规划"）。
 
-| Case | 期望 | 实际 | 真实结论 |
+**评估脚本本身修过 4 个 bug**（2026-11-18），最要命的是**路由判定**：老脚本把"调了任何工具"
+都记成 `rag`，于是 T02 实际调 `calculator`、T09 实际调 `weather` 被误判成错（脚本口径 66.7%）。
+现在改成直接看 `AIMessage.tool_calls` 里的工具名，这两个 case 判回正确。真正错的只剩 3 个：
+
+| Case | 期望 | 实际 | 结论 |
 |---|---|---|---|
-| T02 `1+1等于多少` | chat | `calculator` | ✅ 判错，实为正确路由 |
-| T09 `上海今天天气怎么样` | chat | `weather` | ✅ 判错，实为正确路由 |
 | T06 `RAG 的核心定义是什么` | rag | 无工具 | ❌ 真错：该检索却没检索 |
-| T10 `介绍下 LangGraph` | chat | `rag_search` ×3 | ❌ 真错：不该检索却检索 3 轮，`iter_count` 打满上限，单 case 耗时 106 秒 |
+| T07 `Python 的 list 和 tuple 有什么区别` | chat | `rag_search` ×2 + `web_search` | ❌ 真错：不该检索却检索，还调了占位工具 `web_search`（耗时 70 秒） |
+| T10 `介绍下 LangGraph` | chat | `rag_search` ×3 | ❌ 真错：不该检索却检索 3 轮，`iter_count` 打满上限（耗时 83 秒） |
 
 **结论（与 v2.1 同一个诚实结论）**：反思机制**不提升路由准确率**，T06 这类路由错误事后修不了。
 v2.2 的价值在别处 —— 稳定性从"会抛异常"变成 12/12 零异常、`tool_calls` 悬空从 2/7 降到 0、
@@ -364,11 +383,18 @@ v2.2 的价值在别处 —— 稳定性从"会抛异常"变成 12/12 零异常�
 ## 运行测试
 
 ```bash
-pytest -m "not slow and not e2e" -v   # 快回归（秒级，不连 Milvus、不调真 LLM、不开浏览器）
+pytest -m "not slow and not e2e" -v   # 快回归（90 条，不调真 LLM、不开浏览器）
 pytest -m e2e -v --tracing=retain-on-failure   # 浏览器层（Playwright + 专用 Streamlit:8511）
 pytest -m slow -v                     # 真环境（真 MiniMax + 真 Milvus，慢且花钱）
 pytest -v                             # 全量（103 个收集项）
 ```
+
+> ⚠️ **快回归的耗时依赖 Milvus 在不在**（实测 2026-11-22 两次，Milvus 不可达）：
+> **90 passed in 108.34 秒 / 113.34 秒**。慢的不是用例，是 **`test_api_contract.py` 的 12 个 setup** ——
+> 每个 ~11 秒。原因是 `main.py` 的 lifespan 启动时会连一次 Milvus 探活
+> （`MilvusClient.list_collections()`），**Milvus 不通时这次探活要阻塞约 10–11 秒**
+> （实测），而 `TestClient` 每个用例都重新触发一次 lifespan。
+> Milvus 在线时探活瞬时返回，快回归 **8.60 秒**。
 
 **4 层测试体系**（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层与检索层）。详见 [`docs/status/测试体系.md`](./docs/status/测试体系.md)。
 
@@ -380,7 +406,7 @@ pytest -v                             # 全量（103 个收集项）
 | L2 检索 | `test/test_rag_model.py` | **"检索失败"和"检索为空"分得开吗**（**P2-7** 的回归护栏） | 7 | 7 passed |
 | L2 切分 | `test/test_splitter.py` | 纯函数切分：无内容丢失、块长上限、默认参数来自 YAML | 6 | 6 passed |
 | L4 浏览器 | `test/e2e/test_browser_e2e.py` | 进程外假后端 + 专用 Streamlit：发问 / 清空 / 上传统计 / 三页互切 / 后端 500 | 8 | 8 passed |
-| L4 冒烟 | `test/test_eval_smoke.py` | 真 MiniMax + 真 Milvus：算式必调工具、检索路由、工具失败不失控 | 4 | 4 passed（162 秒） |
+| L4 冒烟 | `test/test_eval_smoke.py` | 真 MiniMax + 真 Milvus：算式必调工具、检索路由、工具失败不失控 | 4 | 4 passed（74.17 秒） |
 | 既有 | `test/test_agent_timeout.py` + `test_main_routes_covered.py` | 工具状态 4 态 / Timer / deadline / 路由挂载 | 13 | 13 passed |
 | 既有（慢） | `test/test_vector_split.py` | 摄取全链路 → 原子切 alias | 1 | passed（25 分 29 秒） |
 
@@ -388,6 +414,10 @@ pytest -v                             # 全量（103 个收集项）
 F9a_x（超时兜底把内部占位当答案）、S5（`Splitter(max_chars)` 没生效，**P1-7**）、
 E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 `eval()` RCE）。
 现在快回归 **90 passed / 0 xfailed**。
+
+**代码覆盖率（实测 2026-11-22，`pytest --cov=.`）**：`agent/` **91%**、全项目 **56%**。
+低覆盖集中在**摄取与前端**——`utils/docs/` 11~20%、`web_page/` 0%（Streamlit 页面
+只在浏览器 E2E 里被点到，不在 pytest 覆盖范围内）。
 
 **仍然没覆盖的**（别把绿色当成质量保证）：
 
@@ -397,7 +427,7 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 
 ### 既有快回归用例具体测什么
 
-（不连 Milvus、不调真实 LLM，全部是纯逻辑 / AST 静态检查）
+（不调真实 LLM，全部是纯逻辑 / AST 静态检查；**但 app lifespan 会探一次 Milvus**，见上面耗时说明）
 
 `test/test_agent_timeout.py` —— 11 个：
 
@@ -424,7 +454,7 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 
 **这 13 个用例没有覆盖什么**（别当成质量保证）：
 
-- **Agent 图的路由逻辑** —— 已由 `test/test_agent_flow.py` 的 11 条 + 公共不变式补上，
+- **Agent 图的路由逻辑** —— 已由 `test/test_agent_flow.py` 的 17 条独立用例 + 9 条参数化不变式补上，
   但它们跑的是**假 LLM**；真实模型的路由决策由 `test_eval_smoke.py`（slow）抽查。
 - **评估集口径过时** —— 12-case 评估集的 `expected_tool` 是二值的，跟不上 v2.2 的 4 个工具。
 
@@ -434,19 +464,22 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 |---|---|---|
 | `test/test_vector_split.py` | 摄取全链路：切分 → embed → 建带时间戳集合 → 插入 → 建索引 → 加载 → **原子切 alias** | ✅ **passed，耗时 25 分 29 秒**（1667 个片段重新 embed） |
 
-> 这个用例每次跑都要把 `txt/` 下 22 个文件重新切 1667 块并**全量重新 embed**
+> 这个用例每次跑都要把 `txt/` 下 33 个文件重新切 1667 块并**全量重新 embed**
 > （bge-large，1024 维，CPU；单批 32 块 ≈ 18 秒）。它是**改了摄取链路后跑一次**的验收用例，
 > 不该混在 `pytest` 默认流程里 —— 已标 `@pytest.mark.slow`，默认快回归会跳过它。
 
-### 手动探针与归档
+### 离线评估、探针与归档
 
-`test/probes/` 是**手动探针脚本**，文件名不匹配 `python_files = test_*.py`，pytest 不收集，
-需从仓库根目录直接运行。它们记录了 `tool_calls` 悬空 / `tool_status` 覆盖的实测过程。
-探针发现的两个 bug 已转成 pytest 用例（`test_agent_flow.py` 的 F1b + 公共不变式）。
+`test/eval/` 是**唯一活着的离线评估**：跑 12 个 case，量工具路由准确率 + 稳定性
+（结果见上文"评估结果"），跑法见 [`test/eval/README.md`](./test/eval/README.md)。
 
-`test/archive/` 是**过时测试脚本的只读归档**（`pytest.ini` 设了 `norecursedirs = archive probes`，
-永不收集），内部分 `scripts/`（v1/v2.1 脚本）与 `data/`（历史跑分快照），说明见
-[`test/archive/README.md`](./test/archive/README.md)。
+`test/probes/` 是**手动探针脚本**，`test/archive/` 是**过时测试脚本的只读归档**
+（v1/v2.1 的死脚本 + 历史跑分快照）。两者都**已经被 pytest 用例取代** ——
+探针发现的 `tool_calls` 悬空 / `tool_status` 覆盖两个 bug，已转成
+`test_agent_flow.py` 的 F1b + 公共不变式。
+
+> ⚠️ **这两个目录只留本地，不上传仓**（见 `.gitignore`）—— 里面的脚本一半能跑一半不能，
+> 留在仓里只会让人误以为它们是现行测试。活着的那个已迁到 `test/eval/`。
 
 **每个文件的分类、测什么、实测结果** —— 见 [`test/README.md`](./test/README.md)。
 
@@ -459,14 +492,19 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 - **Agent 没有多轮记忆**：图没有 checkpointer，`thread_id` 传了但没人读。
   三个 LLM 节点也从不把 `state["messages"]` 发给 LLM（每次从零拼 prompt）。
   补记忆前要先处理 iter 的占位消息（`"READY"` 等），它们会一起进历史。
-- **`empty` 状态语义不精确**：`core/rags/rags.py` 的 `retrieve()` 用 `except Exception: return []`，
-  工具侧区分不了"检索为空"和"检索失败"。修它会连带改 `/rag` 路径行为。
-- **Ollama embedding 调用不限时**：`OllamaEmbeddings` 没传 timeout。工具外层的 `Timer` 兜住了
-  "图不再卡死"，但底层连接本身仍无界。
+- **路由准确率未达标**：75.0%（9/12），低于 90% 的合格线。**LLM 路由本身有随机性**，
+  这个数只是单次采样 —— 要真基线得**重建评估集**（现有 12 个 case 的 `expected_tool`
+  还是 v1 的二值口径，跟不上 v2.2 的 4 个工具）+ **接 CI**。
+- **`retryable` 还不能细分**：工具层只拿到 `AgentToolError` 这一个"其他错误"的桶，
+  区分不出限流/服务不可用（可重试）与参数错/代码 bug（不可重试）。
+- **`/chat` `/rag` 是 `async def` 但内部同步阻塞**：一次请求会占住事件循环直到 LLM 返回。
+  `/agent/chat` 早在 v2.2 就用普通 `def` 规避了，这两条老端点没跟进。
+  ⚠️ **改它不是"改两行"** —— 改成普通 `def` 会让它们进 FastAPI 线程池，
+  `MessageManager.sessions`（无锁）就从"事件循环串行化"变成"多线程无锁访问"，必须连带加锁。
 - **索引与检索用不同客户端**：`vector_main.py` 直连 Ollama HTTP，
   查询侧 `core/rags/rags.py` 用 `langchain_ollama`——同一个 embedding 模型，两条路径。
 - **CORS 放开所有源**：开发期便利，生产部署应改成白名单。
-- **没有评估集**：见上文"评估结果"。**建 eval 集要先于做多轮记忆**，否则记忆做完了也不知道有没有变好。
+- **没有鉴权**：任何能访问到 8000 端口的人都能读你的知识库。**不能暴露公网**。
 
 ---
 
@@ -478,9 +516,13 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 - [x] Agent 图重构：四节点 + 双计数器（v2.2）
 - [x] 三层超时机制 + 异常归一化
 - [x] 工具状态结构化 + 悬空修复
-- [ ] **重建评估集**（当前第一优先级）
+- [x] `retrieve()` 契约拆分：区分"空结果"与"检索失败"（2026-11-17，P2-7）
+- [x] 切分参数改为从 YAML 读取（2026-11-17，P1-7）
+- [x] Ollama embedding 调用加 timeout（2026-11-17，P2-8）
+- [ ] **重建评估集**（当前第一优先级）—— 现有 12 个 case 的 `expected_tool` 还是 v1 二值口径
+- [ ] **评估接 CI** —— 路由准确率要能自动断言，否则改完不知道有没有变好
 - [ ] 多轮记忆（LangGraph checkpointer）—— 需先修 iter 占位消息
-- [ ] `retrieve()` 契约拆分：区分"空结果"与"检索失败"
+- [ ] `/chat` `/rag` 改普通 `def` + `MessageManager` 加锁（并发）
 - [ ] 混合检索（向量 + BM25）
 - [ ] 用户认证与权限管理
 

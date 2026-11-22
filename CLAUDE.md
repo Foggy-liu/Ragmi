@@ -11,12 +11,19 @@ Before doing anything else in this repo, read these in order:
    (§D). It supersedes any older memory file.
 2. `docs/status/项目现状.md` — **the single source of truth for the current state**. §8 is a
    prioritized issue list (P0–P3) with file paths and line numbers; start work from there.
-3. `docs/status/测试现状.md` — only when the task touches tests: what each script under `test/`
+3. `docs/status/项目全景图.md` — how the code is wired together: a 30-minute reading order,
+   the two data flows (offline ingest / online query), the Agent graph in detail, the 14
+   invariants that must not break, and a risk map.
+4. `docs/status/测试现状.md` — only when the task touches tests: what each script under `test/`
    actually measures and its measured result.
-4. `docs/status/项目优化.md` — what each past change did and what it left behind.
+5. `docs/status/项目优化.md` — what each past change did and what it left behind.
+6. `docs/status/项目能力与边界.md` — only when asked "how good is this project / what can it
+   do": measured limits, an explicit list of what it cannot do, and what is missing for
+   productization.
 
 Ground every statement in the code, not in prose: `docs/plan/`, `docs/note/`, `docs/archive/`, and
-`test/archive/` describe earlier versions and are stale in places. Do not quote them as current fact.
+the local-only `test/archive/` describe earlier versions and are stale in places. Do not quote them
+as current fact.
 
 After reading, state briefly what the project is and which `§8` P-item you are picking up, then
 proceed. Keep `docs/status/项目现状.md` in sync with the code whenever `agent/` behavior changes.
@@ -82,14 +89,24 @@ pytest test/test_agent_flow.py -v
 pytest test/test_agent_flow.py::test_name -v
 ```
 
-`test/archive/` holds the archived v2.1 evaluation scripts (`scripts/run_agent_eval.py` etc.) and the
-historical score snapshots (`data/*.json`). `pytest.ini` sets `norecursedirs = archive probes` so
-they are never collected. Their actual run status was measured on 2026-11-15: `run_agent_eval.py`
-**does** still run in real-LLM mode (it needs `PYTHONPATH` pointed at the repo root, because
-`Path(__file__).parent.parent` now resolves to `test/archive/` instead of the repo root) — only
-its `--mock` branch is broken. `run_v1_baseline.py` runs but **overwrites
-`data/v1_baseline_results.json` with 0/12 when the backend is down**. `retry_failed_cases.py`
-merely re-prints cached numbers. See `test/archive/README.md`.
+`test/eval/` holds the **only live offline evaluation**: `run_agent_eval.py` (12 cases → tool-routing
+accuracy + stability) plus `data/agent_test_cases.json` (the eval set) and
+`data/agent_eval_results.json` (the latest snapshot: **75.0% = 9/12**, stability 12/12,
+21 tool calls all `success`, measured 2026-11-18). Run it from the repo root:
+
+```bash
+PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py            # real LLM
+PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock     # reflect uses a fake LLM
+```
+
+Both modes need a real MiniMax key and cost money. It is **not** a pytest case (the filename does
+not match `python_files = test_*.py`; `pytest.ini` also lists `eval` in `norecursedirs`).
+
+`test/archive/` and `test/probes/` hold the outdated v1/v2.1 scaffolding and the one-off probe
+scripts. Both were superseded by pytest cases, and **both are gitignored — they stay local and
+are never pushed** (see `.gitignore`), so a fresh clone will not see them. If you need their
+history, read the local copies or `git log -- test/archive/`. `pytest.ini` sets
+`norecursedirs = archive probes eval`, so they are never collected.
 
 Currently live test files:
 
@@ -103,13 +120,24 @@ Currently live test files:
 - `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks). Marked `@pytest.mark.slow` — excluded from the default fast run.
 - `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
 - `test/e2e/test_browser_e2e.py` — Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**).
-- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s.
+- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s; re-measured 2026-11-18: 19/19 passed in 64 s.
 
 The four-layer system is documented in `docs/status/测试体系.md`; its design is
 `docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-17 the fast run is
 **90 passed / 0 xfailed** and the browser layer is **8 passed** — the three
 `xfail(strict=True)` markers that used to pin known defects (F9a_x / S5 / E4) are gone,
 because P1-1, P1-2 and P1-7 are fixed.
+
+**The fast suite is not hermetic — its runtime depends on Milvus being reachable** (measured
+2026-11-22, twice): **90 passed in 108.34 s / 113.34 s with Milvus down** vs **8.60 s with Milvus
+up**. The cost is not in the tests but in `test/test_api_contract.py`'s 12 setups, each ~11 s:
+`main.py`'s lifespan probes Milvus on every startup (`MilvusClient.list_collections()`), and an
+unreachable Milvus blocks that probe for ~10–11 s. `TestClient` re-triggers the lifespan per test.
+Do not read the slow run as "the tests got slower".
+
+**Code coverage** (measured 2026-11-22, `pytest -m "not slow and not e2e" --cov=.`): `agent/`
+**91%**, whole project **56%**. The low end is ingestion (`utils/docs/` 11–20%) and the Streamlit
+pages (`web_page/` 0% — they are only exercised by the browser E2E, never by pytest).
 
 **Coverage gap to keep in mind**: the fast suite now *does* run `graph.invoke()` — the Agent's
 non-timeout routing branches, counter-reset semantics, and reflect decisions have 17 pytest
@@ -118,11 +146,12 @@ cases in `test/test_agent_flow.py`, plus a parametrized regression net asserting
 ("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
 it, and the only real-LLM probe (S4) is inherently flaky. See `docs/status/测试体系.md` §6.
 
-`test/probes/` holds manual verification scripts (`probe_*.py`). They are not pytest cases — the
-filename pattern does not match `python_files = test_*.py`, so pytest never collects them. Run them
-directly from the repo root. They document the `tool_calls` dangling / `tool_status` overwrite
-findings; see `test/probes/README.md`. Both findings are now covered by pytest cases
-(`test/test_agent_flow.py` F1b + the parametrized "no dangling tool_calls" invariant).
+`test/probes/` holds manual verification scripts (`probe_*.py`) for the `tool_calls` dangling /
+`tool_status` overwrite findings. Both findings are now covered by pytest cases
+(`test/test_agent_flow.py` F1b + the parametrized "no dangling tool_calls" invariant), so the
+directory is **gitignored and never pushed** — it exists only in the local working copy. Do not
+reference `test/probes/` in code or in pushed docs; if you need the historical scripts, read
+`git log -- test/probes/`.
 
 `test/README.md` is the per-file index: what each script tests, its measured result, and what
 the suite does *not* cover. Read it before adding or running anything under `test/`.
@@ -418,7 +447,7 @@ Model selection: direct chat/RAG use the managed current model, while Agent node
 - Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
 - `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
 - When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.
-- When changing `agent/` behavior, add or update a case in `test/test_agent_flow.py` (graph / flow) or `test/test_agent_timeout.py` (timeout / exception mechanism); when changing a tool's body, add or update a case in `test/test_tools.py`. The archived scripts under `test/archive/` no longer run.
+- When changing `agent/` behavior, add or update a case in `test/test_agent_flow.py` (graph / flow) or `test/test_agent_timeout.py` (timeout / exception mechanism); when changing a tool's body, add or update a case in `test/test_tools.py`. The scripts under `test/archive/` are dead scaffolding and are not pushed to the repo; the live offline evaluation lives in `test/eval/run_agent_eval.py`.
 - The Agent's internal placeholder messages are defined once in `agent/constants.py` (`SIGNAL_READY` / `SIGNAL_MAX_ITER` / `SIGNAL_EXPIRED`, grouped as `INTERNAL_SIGNALS`). Producers and consumers must reference the constants, never the string literals — a copied literal drifts and turns the "the answer is not a placeholder" assertion into a tautology.
 - `calculator` must never use `eval()`. It evaluates a hand-rolled AST whitelist (`agent/tools/calculator_tool.py`); keep `test/test_tools.py` green if you touch it.
 - The frontend reads `API_BASE_URL` (default `http://localhost:8000`) — all three `web_page/*.py` files. Do not hardcode a backend address again; the previous mix of `localhost:8000` and `api:8000` broke container deployments.
