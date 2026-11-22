@@ -7,11 +7,11 @@ help:
 	@echo "  make test-e2e      - 浏览器层：pytest -m e2e（需 Playwright + Chromium）"
 	@echo "  make test-slow     - 真环境：pytest -m slow（真 MiniMax + 真 Milvus，慢且花钱）"
 	@echo "  make test-v22-unit - 全量：pytest -v（含上面三层 + 25 分钟的向量切分）"
-	@echo "  make test-eval     - 已归档，见 test/archive/scripts/（旧 v2.1 评估脚本）"
+	@echo "  make test-eval     - 离线工具路由评估（12 case，真 LLM，要花钱）"
 	@echo "  make test-unit     - 已废弃，请用 make test-fast"
 	@echo "  make test-mock     - 已废弃，请用 make test-v22-mock"
 	@echo "  make test-v22      - 同 make test-v22-unit"
-	@echo "  make test-v22-mock - 已归档，见 test/archive/scripts/（旧 v2.1 mock 评估）"
+	@echo "  make test-v22-mock - 离线评估的 --mock 模式（reflect 用假 LLM，agent 仍真）"
 	@echo "  make clean         - 清理缓存"
 
 test: test-fast
@@ -40,14 +40,14 @@ test-e2e:
 test-slow:
 	pytest -m slow -v
 
-# 旧的 v2.1 评估脚本已归档到 test/archive/scripts/。
-# 注意：不是"完全跑不动" —— 真实 LLM 模式能跑通（需 PYTHONPATH 指向仓库根），
-# 只有 --mock 分支 ImportError；详见 test/archive/README.md。
+# 离线工具路由评估（12 case）。这是 test/ 下唯一活着的离线评估脚本，
+# 2026-11-18 修好了四处失效。两种模式都要真实 MiniMax key，都花钱。
+# 详见 test/eval/README.md。
 test-v22-mock:
-	@echo "已归档到 test/archive/scripts/run_agent_eval.py（真实 LLM 模式仍可跑，见 test/archive/README.md）"
+	PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock
 
 test-eval:
-	@echo "已归档到 test/archive/scripts/run_agent_eval.py（真实 LLM 模式仍可跑，见 test/archive/README.md）"
+	PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

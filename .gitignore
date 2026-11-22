@@ -78,3 +78,17 @@ test/fixtures/*
 
 # E2E 运行产物（截图 + 报告），本地看就行，不进仓
 test/e2e/_artifacts/
+
+# 过时测试脚本与一次性探针 —— 只留本地做历史参照，不进仓（免得被当成现行测试）
+# test/eval/ 是唯一活着的离线评估，保留跟踪
+test/archive/
+test/probes/
+
+# --mock 模式的评估输出（临时产物，不进仓；真实快照 agent_eval_results.json 才进）
+test/eval/data/agent_eval_results_mock.json
+
+# 测试覆盖率数据（pytest-cov 生成的 SQLite 文件），可随时重跑再生
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
