@@ -4,7 +4,12 @@ DEFAULT_MODEL:
 
 DEFAULT_EMBEDDING_MODEL:
   platform: "ollama"
-  model_name: "bge-large:latest"
+  # ⚠️ 2026-11-25 从 bge-large:latest 换成 bge-m3:latest。
+  # bge-large 是 BGE 的**英文**模型，在中文语料上几乎不区分度 —— 实测「学习计划的四个阶段」
+  # 的正确块会被法典块挤出 top-5，「民法典诉讼时效期间」返回的全是民法典别的条文。
+  # bge-m3 是多语言模型，同样 1024 维，实测把最相关的三块稳定排在 1/2/3。
+  # ⚠️ 改这里会**同时**改索引端和检索端（两端都从这一个字段取值），不能只改一边。
+  model_name: "bge-m3:latest"
 
 # 平台配置（ollama + aliyun + minimax—使用的openai）
 PLATFORMS:
@@ -48,6 +53,9 @@ MODEL_DEFAULTS:
       "bge-large:latest":
         dimensions: 1024
         context_size: 512
+      "bge-m3:latest":
+        dimensions: 1024
+        context_size: 8192
 
   # openai 平台的模型参数
   openai:

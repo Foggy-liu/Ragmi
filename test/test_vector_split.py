@@ -5,7 +5,8 @@
 2. txt_data alias 被创建
 3. 集合有行数 > 0
 
-前置：Milvus 容器健康、Ollama 在 11434 提供 bge-large embedding。
+前置：Milvus 容器健康、Ollama 在 11434 提供 bge-m3 embedding（模型名由
+`EmbeddingModel._resolve_model_name()` 解析，跟索引端同一来源）。
 直接 python test/test_vector_split.py 跑。
 """
 import sys
