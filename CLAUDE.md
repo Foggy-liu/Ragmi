@@ -20,6 +20,10 @@ Before doing anything else in this repo, read these in order:
 6. `docs/status/项目能力与边界.md` — only when asked "how good is this project / what can it
    do": measured limits, an explicit list of what it cannot do, and what is missing for
    productization.
+7. `docs/status/项目速览.md` + `docs/status/术语表.md` — **human onboarding** (not needed by
+   Claude): the速览 expands 42 framework/project concepts with `file:line`, and the术语表 is a
+   54-entry lookup table. Read these when a human asks "how do I understand this project" or
+   "what does this term mean" — they are the explanation layer over 项目现状.md.
 
 Ground every statement in the code, not in prose: `docs/plan/`, `docs/note/`, `docs/archive/`, and
 the local-only `test/archive/` describe earlier versions and are stale in places. Do not quote them
@@ -55,7 +59,9 @@ docker-compose up -d milvus
 curl http://localhost:9091/healthz
 
 # Parse and vectorize documents into a fresh Milvus collection, then atomically move the configured alias.
-python utils/txt_spliter/vector_main.py
+# ⚠️ 必须用 `python -m`（或 PYTHONPATH=.）：直接跑脚本时 sys.path[0] 是 utils/txt_spliter/，
+#    `import utils` 会 ModuleNotFoundError。
+python -m utils.txt_spliter.vector_main
 
 # Start FastAPI backend (127.0.0.1:8000)
 python main.py
@@ -117,23 +123,41 @@ Currently live test files:
 - `test/test_tools.py` — **L2 tool layer**: pure-function checks on the tool bodies. Covers `calculator`'s AST-whitelist evaluation (arithmetic, unsafe-input rejection, malformed input) — the regression net for the `eval()` RCE fix — plus `rag_search`'s exception normalization (26 cases, always run).
 - `test/test_rag_model.py` — **L2 retrieval layer**: the `core/rags/rags.py` failure semantics — "retrieval failed" raises `RetrievalError`, "retrieval empty" returns `[]`, and `/rag` stays resilient (7 cases, always run).
 - `test/test_splitter.py` — pure-function splitter checks (6 cases, always run).
-- `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks). Marked `@pytest.mark.slow` — excluded from the default fast run.
+- `test/test_file_filter.py` — **L2 ingest-dedup layer**: `utils/docs/manager/filter.py`'s MD5 content-hash dedup. Covers first-time processing, same-content skip, different-filename-same-content skip, **re-upload with a newer source mtime still skips** (the old mtime gate defeated dedup on the upload path), changed content re-processes, deleted output re-processes, **the index stores filenames only** (host and container share one index), legacy absolute-path indexes still resolve, and the regression net "upload the same document twice produces exactly one output file, no `_1` copy" (9 cases, always run).
+- `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks, 2026-11-16 with bge-large; the same pipeline over the current corpus — 17 files / 1517 chunks / bge-m3 — took **14 min 20 s** via `vector_main.py` on 2026-11-25). Marked `@pytest.mark.slow` — excluded from the default fast run.
 - `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
 - `test/e2e/test_browser_e2e.py` — Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**).
 - `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s; re-measured 2026-11-18: 19/19 passed in 64 s.
 
 The four-layer system is documented in `docs/status/测试体系.md`; its design is
-`docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-17 the fast run is
-**90 passed / 0 xfailed** and the browser layer is **8 passed** — the three
-`xfail(strict=True)` markers that used to pin known defects (F9a_x / S5 / E4) are gone,
-because P1-1, P1-2 and P1-7 are fixed.
+`docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-25 the fast run is
+**99 passed / 0 xfailed** — the three `xfail(strict=True)` markers that used to pin known
+defects (F9a_x / S5 / E4) are gone, because P1-1, P1-2 and P1-7 are fixed; the +9 are
+`test/test_file_filter.py` (MD5 dedup on the ingest path).
 
-**The fast suite is not hermetic — its runtime depends on Milvus being reachable** (measured
-2026-11-22, twice): **90 passed in 108.34 s / 113.34 s with Milvus down** vs **8.60 s with Milvus
-up**. The cost is not in the tests but in `test/test_api_contract.py`'s 12 setups, each ~11 s:
-`main.py`'s lifespan probes Milvus on every startup (`MilvusClient.list_collections()`), and an
-unreachable Milvus blocks that probe for ~10–11 s. `TestClient` re-triggers the lifespan per test.
-Do not read the slow run as "the tests got slower".
+The browser layer collects **8** cases and reports **8 passed** only when the real backend
+is up on :8000. With the real backend down, `test_e8_real_backend_smoke` is **skipped**
+(it needs a live backend) and the layer reports **7 passed / 1 skipped** (measured
+2026-11-22). That skip is an environment condition, not a failure.
+
+**The fast suite is not hermetic — its runtime depends on Milvus being reachable** (re-measured
+2026-11-25 on the current 99 cases): **99 passed in 108.70 s with Milvus down** vs
+**7.5–8.9 s with Milvus up** (six consecutive runs: 8.89 / 7.49 / 7.60 / 7.89 / 7.83 / 7.72 s).
+With Milvus down, the cost is not in the tests but in `test/test_api_contract.py`'s 12 setups,
+each ~10–11 s: `main.py`'s lifespan probes Milvus on every startup
+(`MilvusClient.list_collections()`), and an unreachable Milvus blocks that probe for ~10–11 s.
+`TestClient` re-triggers the lifespan per test. Do not read the slow run as "the tests got slower".
+
+With Milvus up, the same 12 lifespans cost ~6.7 s total (~0.55 s each — `OllamaEmbeddings()`
+construction, i.e. httpx client + SSL context, is 0.46 s of that); the other 87 cases take 1.43 s.
+
+> ⚠️ **The Milvus-up number is load-sensitive.** On 2026-11-25, right after an index rebuild plus a
+> Docker image rebuild (machine under load), the same suite measured **19.3–21.3 s**; once the
+> machine settled it dropped back to 7.5–8.9 s. The per-lifespan fixed cost floated between
+> ~1.6 s and ~0.55 s. This is **not** caused by the code change or the model switch — two
+> candidate explanations were tested and ruled out: ① **cold vs warm Ollama model makes no
+> difference** (unload bge-m3 first → 7.83 s; warm → 7.72 s); ② **`import main` is not the
+> culprit** (`OllamaEmbeddings()` construction: 0.46 s bare, 0.48 s after importing `main`).
 
 **Code coverage** (measured 2026-11-22, `pytest -m "not slow and not e2e" --cov=.`): `agent/`
 **91%**, whole project **56%**. The low end is ingestion (`utils/docs/` 11–20%) and the Streamlit
@@ -427,6 +451,16 @@ Do not replace the direct Ollama HTTP embedding path in `vector_main.py` with `l
 
 Model selection: direct chat/RAG use the managed current model, while Agent nodes explicitly select MiniMax-M3.1-Flash. These currently name the same model, but the Agent path obtains it independently of `app.state.model_manager` — switching the YAML default does not change which model the Agent calls.
 
+**`configs/` is baked into the Docker image, not bind-mounted.** The `api` service mounts only
+`./documents` and `./txt`; `Dockerfile` does `COPY . .`, so the container reads the
+`model_config.yaml` that existed when the image was built. Changing a config file therefore
+requires `docker compose build api` + `up -d --force-recreate` — a plain restart is not enough.
+Measured 2026-11-25: the container kept the old `bge-large` while the index was rebuilt with
+`bge-m3`; both embedders are 1024-dimensional, so Milvus raised nothing and the container
+answered "the document does not contain…" while the host answered "three years" — a silent
+answer-quality divergence, not a crash. Verify with
+`docker exec ragmi-api python -c "from utils.models.embedding_model import EmbeddingModel; print(EmbeddingModel()._resolve_model_name())"`.
+
 ## Important Constraints
 
 - Keep Agent tool output as raw retrieved chunks; final synthesis belongs to the Agent LLM.
@@ -439,7 +473,7 @@ Model selection: direct chat/RAG use the managed current model, while Agent node
 - Keep `api/api_agent.py`'s endpoint as a plain `def`. `ask()` is blocking; `async def` would stall the whole FastAPI event loop.
 - Normalize tool-layer exceptions to `AgentTimeoutError` / `AgentToolError` exactly once, in the tool itself. Downstream layers should not re-translate third-party exception types.
 - **Retrieval failure is not retrieval emptiness.** `core/rags/rags.py` raises `RetrievalError` when the store is down or the query fails, and returns `[]` only when there is genuinely nothing to return. `agent/tools/rag_tool.py` translates it (`__cause__` is a timeout → `AgentTimeoutError`, else `AgentToolError`). Never collapse the two back into `[]` — that is what makes `tool_status` useless.
-- The embedding model name comes from `EmbeddingModel._resolve_model_name()` only (`EMBEDDING_MODEL` env var > YAML). Never hardcode `bge-large` — a silent mismatch with the indexing side returns noise, not an error.
+- The embedding model name comes from `EmbeddingModel._resolve_model_name()` only (`EMBEDDING_MODEL` env var > YAML). Never hardcode the model name (currently `bge-m3`) — a silent mismatch with the indexing side returns noise, not an error.
 - Do not build a second `OllamaEmbeddings` in `core/rags/rags.py`; reuse `EmbeddingModel.embedding` so the timeout and the model name stay in one place.
 - Always construct `MilvusClient` with `uri=f"http://{host}:{port}"`. pymilvus 2.6 has no `host`/`port` parameters — those keys fall into `**kwargs` and are **silently ignored**, so the client connects to the default `http://localhost:19530`. That happens to work on the host and always fails inside a container.
 - `requirements.txt` is a **fully pinned lock file** (139 packages, closure resolved with linux markers). Pinning only direct dependencies lets transitive deps drift to newer versions and break the container at import time. To change a dependency: edit the "直接依赖" section, then re-resolve the closure — do not hand-edit the locked section.

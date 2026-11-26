@@ -81,7 +81,7 @@ YAML 配置 + `.env` 占位符，运行时 `switch_model()` 动态切换，无�
 
 ### Milvus 向量检索
 
-Docker 部署，不占本地内存。Embedding 用 `bge-large`（1024 维），余弦相似度 + Top-5 召回。
+Docker 部署，不占本地内存。Embedding 用 `bge-m3`（1024 维），余弦相似度 + Top-5 召回。
 索引构建走**时间戳 collection + 别名原子切换**，新旧共存，可回滚。
 
 ### 智能文本切分
@@ -103,7 +103,7 @@ FastAPI 后端（8000）
   │
   ├── /agent/chat ──→ LangGraph Agent 图 ──→ 4 个 LLM 节点 + 4 个工具
   │                          │
-  │                          └── rag_search → Milvus → bge-large
+  │                          └── rag_search → Milvus → bge-m3
   │
   ├── /rag ──────────→ 检索 + grounded prompt → LLM
   ├── /chat ─────────→ 纯 LLM 对话
@@ -225,8 +225,12 @@ MILVUS_PORT=19530
 ### 3. 向量化文档
 
 ```bash
-python utils/txt_spliter/vector_main.py
+python -m utils.txt_spliter.vector_main
 ```
+
+> ⚠️ 必须用 `-m`（或先 `export PYTHONPATH=.`）。直接 `python utils/txt_spliter/vector_main.py`
+> 会把 `utils/txt_spliter/` 当成 `sys.path[0]`，`import utils.*` 直接
+> `ModuleNotFoundError: No module named 'utils'`。
 
 解析后的文件放 `txt/`，原始文件放 `documents/`。脚本会建时间戳 collection → 灌数据 → 建索引 →
 **原子切换别名**，旧 collection 保留以便回滚。
@@ -386,15 +390,23 @@ v2.2 的价值在别处 —— 稳定性从"会抛异常"变成 12/12 零异常�
 pytest -m "not slow and not e2e" -v   # 快回归（90 条，不调真 LLM、不开浏览器）
 pytest -m e2e -v --tracing=retain-on-failure   # 浏览器层（Playwright + 专用 Streamlit:8511）
 pytest -m slow -v                     # 真环境（真 MiniMax + 真 Milvus，慢且花钱）
-pytest -v                             # 全量（103 个收集项）
+pytest -v                             # 全量（112 个收集项）
 ```
 
-> ⚠️ **快回归的耗时依赖 Milvus 在不在**（实测 2026-11-22 两次，Milvus 不可达）：
-> **90 passed in 108.34 秒 / 113.34 秒**。慢的不是用例，是 **`test_api_contract.py` 的 12 个 setup** ——
-> 每个 ~11 秒。原因是 `main.py` 的 lifespan 启动时会连一次 Milvus 探活
-> （`MilvusClient.list_collections()`），**Milvus 不通时这次探活要阻塞约 10–11 秒**
-> （实测），而 `TestClient` 每个用例都重新触发一次 lifespan。
-> Milvus 在线时探活瞬时返回，快回归 **8.60 秒**。
+> ⚠️ **快回归的耗时依赖 Milvus 在不在**（2026-11-25 在 99 条用例上实测）：
+> **Milvus 不可达 → 108.70 秒**；**Milvus 在线 → 7.5–8.9 秒**（连续 6 次实测：
+> 8.89 / 7.49 / 7.60 / 7.89 / 7.83 / 7.72 秒）。慢的不是用例，是
+> **`test_api_contract.py` 的 12 个 setup** ——
+> Milvus 不通时每个 ~11 秒，因为 `main.py` 的 lifespan 启动时会连一次 Milvus 探活
+> （`MilvusClient.list_collections()`），**这次探活要阻塞约 10–11 秒**（实测），
+> 而 `TestClient` 每个用例都重新触发一次 lifespan。
+> Milvus 在线时探活瞬时返回，每个 setup 只花 ~0.55 秒（其中 `OllamaEmbeddings()` 构造
+> —— httpx 客户端 + SSL 上下文 —— 占 0.46 秒）→ 12 × 0.55 ≈ 6.7 秒，其余 87 条只要 1.43 秒。
+>
+> ⚠️ **这个数对机器负载敏感**：同一天在刚跑完索引重建 + Docker 镜像重建（机器满载）时
+> 测到 **19.3–21.3 秒**，缓下来后回到 7.5–8.9 秒。**不是代码改动或嵌入模型切换造成的** ——
+> 两个候选解释已实测排除：① Ollama 模型冷/热无差别（卸载 bge-m3 后 7.83 秒 vs 热跑 7.72 秒）；
+> ② `import main` 不是元凶（`OllamaEmbeddings()` 构造：裸进程 0.46 秒、import 后 0.48 秒）。
 
 **4 层测试体系**（2026-11-16 落地，2026-11-17 清零 xfail + 加工具层与检索层）。详见 [`docs/status/测试体系.md`](./docs/status/测试体系.md)。
 
@@ -413,7 +425,7 @@ pytest -v                             # 全量（103 个收集项）
 **`xfail` 已清零（2026-11-17）** —— 曾用 `xfail(strict=True)` 固化的 3 个缺陷全部修掉：
 F9a_x（超时兜底把内部占位当答案）、S5（`Splitter(max_chars)` 没生效，**P1-7**）、
 E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 `eval()` RCE）。
-现在快回归 **90 passed / 0 xfailed**。
+现在快回归 **99 passed / 0 xfailed**（2026-11-25 实测）。
 
 **代码覆盖率（实测 2026-11-22，`pytest --cov=.`）**：`agent/` **91%**、全项目 **56%**。
 低覆盖集中在**摄取与前端**——`utils/docs/` 11~20%、`web_page/` 0%（Streamlit 页面
@@ -462,11 +474,15 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 
 | 用例 | 测什么 | 实测结果 |
 |---|---|---|
-| `test/test_vector_split.py` | 摄取全链路：切分 → embed → 建带时间戳集合 → 插入 → 建索引 → 加载 → **原子切 alias** | ✅ **passed，耗时 25 分 29 秒**（1667 个片段重新 embed） |
+| `test/test_vector_split.py` | 摄取全链路：切分 → embed → 建带时间戳集合 → 插入 → 建索引 → 加载 → **原子切 alias** | ✅ **passed，耗时 25 分 29 秒**（2026-11-16 实测，1667 个片段重新 embed） |
 
-> 这个用例每次跑都要把 `txt/` 下 33 个文件重新切 1667 块并**全量重新 embed**
-> （bge-large，1024 维，CPU；单批 32 块 ≈ 18 秒）。它是**改了摄取链路后跑一次**的验收用例，
+> 这个用例每次跑都要把 `txt/` 下全部文件重新切块并**全量重新 embed**
+> （1024 维，CPU；单批 32 块 ≈ 18 秒）。它是**改了摄取链路后跑一次**的验收用例，
 > 不该混在 `pytest` 默认流程里 —— 已标 `@pytest.mark.slow`，默认快回归会跳过它。
+>
+> ⚠️ 上面 25 分 29 秒是 **2026-11-16** 的实测（当时 33 个文件 / 1667 块 / bge-large）。
+> 2026-11-25 语料清理成 **17 个文件 / 1517 块 / bge-m3** 后，同一条链路由
+> `python -m utils.txt_spliter.vector_main` 重跑实测 **14 分 20 秒**（14:50:54 → 15:05:14）。
 
 ### 离线评估、探针与归档
 
