@@ -1,0 +1,463 @@
+{
+  "rubric_version": "v4-2026-11-27",
+  "source": {
+    "answer_key": "docs/task/答案质量评估设计.md §5.2–§5.5 的 JSON 块",
+    "anchors": "docs/task/答案质量评估题集.md §2.3 / §3 / §4 / §5 / §6 的锚点表",
+    "note": "docs/* 被 .gitignore 忽略 → 本文件是自包含副本，是运行时的唯一依据。答案键与锚点两份文档语义已逐条比对，0 处不一致。C/D 组在设计稿里没有 reference_answers 字段（它们是二值 / 数字比对，不靠参考答案判分）→ 本文件补了标准正解，仅供人工复核与判分器自检。"
+  },
+  "counts": {
+    "must_contain_total": 24,
+    "should_contain_total": 6,
+    "note": "hit_rate 分母 = 24 条 must_contain（A/B 组 8 题，条数不等）；depth_rate 分母 = 6 条 should_contain"
+  },
+  "cases": [
+    {
+      "id": "A01",
+      "group": "A",
+      "type": "fact",
+      "scored": true,
+      "query": "本项目的文档切块参数是什么？切块最大多少字符、重叠多少？用的嵌入模型向量维度是多少？",
+      "must_contain": [
+        "切块参数 chunk_size = 300（片段最大 300 字符）",
+        "切块重叠 chunk_overlap = 30",
+        "嵌入模型是 bge-m3，向量维度 1024"
+      ],
+      "should_contain": [
+        "嵌入模型名只有一个事实来源：EmbeddingModel._resolve_model_name()（EMBEDDING_MODEL 环境变量优先于 YAML）"
+      ],
+      "must_not_contain": [
+        "把当前块数表述成知识库的容量上限（『知识库最多只能存 N 个片段』）"
+      ],
+      "reference_answers": [
+        "切块参数 chunk_size=300、chunk_overlap=30，嵌入模型用 bge-m3，向量维度 1024。模型名统一由 EmbeddingModel._resolve_model_name() 解析，环境变量 EMBEDDING_MODEL 优先于 YAML。",
+        "片段最大 300 字符，重叠 30 字符；bge-m3 出的向量是 1024 维（名字走 _resolve_model_name()，索引端和检索端读同一处）。",
+        "语料按 300 字切分、重叠 30 字；嵌入模型 bge-m3，输出向量维度 1024。"
+      ],
+      "material_source": "txt/项目能力与边界_md.txt:43-44",
+      "anchors": [
+        {
+          "name": "chunk_size=300",
+          "regex": "chunk_size\\s*[=:：]?\\s*300(?!\\d)",
+          "expect": "hit"
+        },
+        {
+          "name": "overlap=30",
+          "regex": "overlap\\s*[=:：]?\\s*30(?!\\d)",
+          "expect": "hit"
+        },
+        {
+          "name": "bge-m3",
+          "regex": "(?i)bge-?m3",
+          "expect": "hit"
+        },
+        {
+          "name": "维度1024",
+          "regex": "(?i)(?:维度[^\\n]{0,24}1024|1024[^\\n]{0,24}(?:维|bge-m3)|FloatVector\\s*\\(\\s*1024\\s*\\)|FLOAT_VECTOR\\s*,\\s*1024)",
+          "expect": "hit"
+        }
+      ],
+      "notes": "块数（2170）不进答案键 —— 它是语料的函数。素材里 chunk_size 的代码块版本被 md 解析器丢弃（设计稿 §9.1），幸好 §2.1 表格里有一份 → A01 成立全靠那张表格。"
+    },
+    {
+      "id": "A02",
+      "group": "A",
+      "type": "fact",
+      "scored": true,
+      "query": "Agent 图的 recursion_limit 是多少？这个值是写死的吗？",
+      "must_contain": [
+        "recursion_limit = 42",
+        "由 MAX_ITER / MAX_REFL 推导得出，不是写死的常量"
+      ],
+      "should_contain": [
+        "最坏情况 32 步会撞 LangGraph 默认上限 25，触发 GraphRecursionError"
+      ],
+      "must_not_contain": [
+        "把 32 当成实际传给 LangGraph 的 recursion_limit（32 是最坏步数，不是上限值）"
+      ],
+      "reference_answers": [
+        "recursion_limit 是 42，由 _STEPS_PER_ROUND × (MAX_REFL+1) + 10 推导，不是写死的。最坏情况 32 步会撞 LangGraph 默认 25，所以要显式传 42。",
+        "42。由 MAX_ITER/MAX_REFL 算出来的，改常量它会跟着变；32 是最坏步数，真正传的是 42。",
+        "运行时显式给 LangGraph 42，公式是 8×4+10；写死默认 25 会撞 GraphRecursionError。"
+      ],
+      "material_source": "txt/术语表_md.txt:27、txt/项目优化_md.txt:357、txt/项目速览_md.txt:560",
+      "anchors": [
+        {
+          "name": "=42",
+          "regex": "(?i)recursion_limit[^\\n]{0,120}\\b42\\b",
+          "expect": "hit"
+        },
+        {
+          "name": "推导非写死",
+          "regex": "(?i)(?:recursion_limit[^\\n]{0,140}(?:推导|不写死|算出|而不是写死)|MAX_REFL[^\\n]{0,40}推导|推导[^\\n]{0,40}MAX_REFL)",
+          "expect": "hit"
+        },
+        {
+          "name": "GraphRecursionError",
+          "regex": "GraphRecursionError",
+          "expect": "hit"
+        },
+        {
+          "name": "最坏32步",
+          "regex": "最坏(?:情况)?\\s*32\\s*步|8\\s*×\\s*4",
+          "expect": "hit"
+        }
+      ],
+      "notes": "负例直接取自素材 —— 项目速览_md.txt:755 明写「代码里两个数都对，但指的是两件事：32 是最坏步数，42 才是实际传的值」。"
+    },
+    {
+      "id": "A03",
+      "group": "A",
+      "type": "fact",
+      "scored": true,
+      "query": "LLM 单次调用超时多少秒？工具超时多少秒？整图总时限多少秒？",
+      "must_contain": [
+        "LLM 单次调用超时 30 秒",
+        "工具超时 30 秒",
+        "整图总时限 90 秒"
+      ],
+      "should_contain": [],
+      "must_not_contain": [
+        "把整图总时限说成 30 秒"
+      ],
+      "reference_answers": [
+        "llm=30 秒、tool=30 秒、total=90 秒，配置在 configs/agent_config.yaml 的 timeout 段。",
+        "单次 LLM 30 秒，工具 30 秒，整张图 90 秒。",
+        "三层超时分别是 30 / 30 / 90 秒：LLM 调用、工具调用、整图总时限。"
+      ],
+      "material_source": "txt/项目现状_md.txt:96、txt/项目全景图_md.txt:91",
+      "anchors": [
+        {
+          "name": "llm=30",
+          "regex": "(?i)llm\\s*[=:：]?\\s*30(?!\\d)",
+          "expect": "hit"
+        },
+        {
+          "name": "tool=30",
+          "regex": "(?i)tool\\s*[=:：]?\\s*30(?!\\d)",
+          "expect": "hit"
+        },
+        {
+          "name": "total=90",
+          "regex": "(?i)(?:total|TOTAL_TIMEOUT)[^\\n]{0,30}90(?!\\d)",
+          "expect": "hit"
+        }
+      ],
+      "notes": "本题的问法换过一次（设计稿 §8.1）。原问法「三层超时分别设了多少秒？」top-5 只拿到 30、拿不到 90。"
+    },
+    {
+      "id": "A04",
+      "group": "A",
+      "type": "fact",
+      "scored": true,
+      "query": "本项目重建向量索引后，线上是怎么切到新集合的？为什么重建不用改代码、不用重启服务？",
+      "must_contain": [
+        "每次重建新建一个带时间戳的真实集合 txt_data_<时间戳>（旧集合保留）",
+        "用 Milvus alias（稳定名 txt_data）原子改指到新集合 —— alter_alias()，首次没有 alias 时走 create_alias()",
+        "检索侧只认 alias 这个稳定名字，所以 alias 改指后线上立刻读新数据 —— 不用改代码、不用重启服务"
+      ],
+      "should_contain": [
+        "「原子」的准确含义：alias 改指是 Milvus 内部的单次指针更新，不是「先删 alias 再建 alias」",
+        "旧集合保留不删，作为回滚窗口"
+      ],
+      "must_not_contain": [
+        "把切换方式说成「要改配置里的集合名」或「要重启服务 / 重建镜像」"
+      ],
+      "reference_answers": [
+        "重建时先新建一个带时间戳的真实集合 txt_data_<ts>，灌完数据建好索引后，用 Milvus 的 alias 机制把稳定名 txt_data 原子改指到新集合（alter_alias，首次走 create_alias）。检索侧只认 txt_data 这个别名、不认真实集合名，所以 alias 改指完线上立刻读新数据，不用改代码也不用重启。旧集合保留做回滚。",
+        "每次重建都建一个新的 txt_data_<时间戳> 集合，然后把 alias（默认 txt_data）改指过去，这一步是原子改指。查询只认 alias，所以不用动代码、不用重启服务；旧集合留着可以回滚。",
+        "走的是 Milvus alias：摄取侧建 txt_data_<时间戳> 新集 → 建索引 → alter_alias 把稳定别名切过去；检索端只按 alias 查，因此重建完零停机切过去，不需要改配置也不需要重启。"
+      ],
+      "material_source": "txt/项目全景图_md.txt:14-15、txt/项目能力与边界_md.txt:29、:148、txt/项目速览_md.txt:166-170、:172-178、:366-377、txt/术语表_md.txt:43-44、:68",
+      "anchors": [
+        {
+          "name": "集合名带时间戳",
+          "regex": "真实集合名[^\\n]{0,40}(?:时间戳|<ts>)|txt_data[_<][^\\n]{0,18}(?:时间戳|<ts>)|集合名带时间戳",
+          "expect": "hit"
+        },
+        {
+          "name": "alias改指",
+          "regex": "alter_alias|alias[^\\n]{0,20}(?:改指|指向它|一切)|改指[^\\n]{0,24}集合",
+          "expect": "hit"
+        },
+        {
+          "name": "原子切换",
+          "regex": "原子[^\\n]{0,14}(?:切换|切|alias)",
+          "expect": "hit"
+        },
+        {
+          "name": "不改代码/零停机",
+          "regex": "不需要改任何代码|不改任何代码|不用改代码|不需要改代码|零停机|未重启[^\\n]{0,24}自动生效",
+          "expect": "hit"
+        }
+      ],
+      "notes": "【实测 2026-11-27】本题替换了原 A04（原题「嵌入模型与维度」与 A01 要点重复且锚点太松 → 假阳性过闸）。本题属忠实性层不是锚点层。「零停机」≠「零延迟」等 3 条真知识因支撑素材不在本题 top-5 里，按可达性要求不进 should_contain。"
+    },
+    {
+      "id": "B01",
+      "group": "B",
+      "type": "mechanism",
+      "scored": true,
+      "query": "RAGMI 的 Agent 有三层超时，分别负责什么？为什么「超时就杀掉线程」这个做法在本项目行不通？",
+      "must_contain": [
+        "第 1 层异常归一化：把第三方异常翻译成 AgentTimeoutError / AgentToolError",
+        "第 2 层单次动作超时：Timer 包住单次调用",
+        "第 3 层整图 deadline：图级总时限，各节点动手前协作式检查",
+        "Python 杀不掉线程（没有 Thread.terminate()），超时只能『不再等』，底层连接必须自己也有上限"
+      ],
+      "should_contain": [],
+      "must_not_contain": [
+        "超时会强制终止正在执行的线程"
+      ],
+      "reference_answers": [
+        "第一层异常归一化，把第三方异常翻译成自家的 AgentTimeoutError / AgentToolError；第二层单次动作超时，用 Timer 包住单次 LLM 或工具调用；第三层是整图 deadline，图级总时限，节点动手前协作式检查。之所以不能靠杀线程实现，是因为 Python 没有 Thread.terminate()，杀不掉正在跑的线程，所以超时只能是「不再等」，底层连接必须自己也有上限。",
+        "三层分别是异常归一化、单次动作超时、整图 deadline。Python 杀不掉线程，所以超时只能「不再等」。",
+        "最外层异常归一化负责把异常翻译成自家类型；中间层单次动作超时负责计时单次调用；最内层整图 deadline 给整张图一个总时限。Python 的线程无法被强制终止，超时只能停止等待。"
+      ],
+      "material_source": "txt/项目能力与边界_md.txt:26、:146、txt/项目速览_md.txt:411、txt/术语表_md.txt:71",
+      "anchors": [
+        {
+          "name": "异常归一化",
+          "regex": "异常归一化",
+          "expect": "hit"
+        },
+        {
+          "name": "单次动作",
+          "regex": "单次动作",
+          "expect": "hit"
+        },
+        {
+          "name": "deadline",
+          "regex": "(?i)deadline",
+          "expect": "hit"
+        },
+        {
+          "name": "杀不掉线程",
+          "regex": "(?i)杀不掉线程|Thread\\.terminate|不再等|不等了",
+          "expect": "hit"
+        }
+      ],
+      "notes": "负例是素材自己说的反话（原文：「不再等」≠「杀掉」）→ 判分器判语义等价，不判字面。锚点「杀不掉线程」枚举了 4 种语料说法。"
+    },
+    {
+      "id": "B02",
+      "group": "B",
+      "type": "mechanism",
+      "scored": true,
+      "query": "RAGMI 的 retrieve() 在检索失败时怎么处理？为什么不直接返回空列表？不这么做会造成什么后果？",
+      "must_contain": [
+        "检索失败时 retrieve() 抛 RetrievalError",
+        "只有真的没检索到才返回空列表 []",
+        "不区分的话工具状态就全无意义，超时和 bug 分不开"
+      ],
+      "should_contain": [],
+      "must_not_contain": [
+        "检索失败时返回空列表即可"
+      ],
+      "reference_answers": [
+        "core/rags/rags.py 在检索失败时抛 RetrievalError，只有真的没查到东西才返回空列表；agent/tools/rag_tool.py 再把它翻译成 AgentTimeoutError 或 AgentToolError，工具状态因此能记成 timeout / error 而不是 empty。传统写法 except: return [] 把两者混成一个，工具状态就全无意义，超时和 bug 分不开。",
+        "失败抛 RetrievalError，空才返回 []。不区分的话 timeout 和 bug 都记成 empty，没法排查。",
+        "靠抛异常与返回空列表来区分：失败走异常路径并保留原始异常作为 __cause__，空走返回路径。混成一个之后，工具的四态记账就废了，超时和普通 bug 无法分辨。"
+      ],
+      "material_source": "txt/项目速览_md.txt:387-388、txt/项目能力与边界_md.txt:147",
+      "anchors": [
+        {
+          "name": "RetrievalError",
+          "regex": "RetrievalError",
+          "expect": "hit"
+        },
+        {
+          "name": "返回空",
+          "regex": "返回\\s*\\[\\]|返回空列表|返回空",
+          "expect": "hit"
+        },
+        {
+          "name": "后果",
+          "regex": "(?i)bug\\s*分不开|工具状态全无意义|状态记成\\s*empty|长得一模一样|排查方向|吞成空列表|反思决策靠猜",
+          "expect": "hit"
+        }
+      ],
+      "notes": "问法换过一次：原问法召回 §3.10 前半段，后果那一条被切到下一个 chunk。现问法以 retrieve() 定位。问法里不含答案词（没出现 RetrievalError），符合 R2。"
+    },
+    {
+      "id": "B03",
+      "group": "B",
+      "type": "mechanism",
+      "scored": true,
+      "query": "工具调用状态 tool_status 有哪几种状态？key 用的是什么？为什么不能按工具名记？",
+      "must_contain": [
+        "四种状态：success / empty / timeout / error",
+        "key 是工具调用的 id，不是工具名",
+        "同一轮里 MiniMax 可能并发调同一个工具 2~3 次，按工具名记会静默覆盖（实测：成功的那条被 timeout 冲掉）"
+      ],
+      "should_contain": [],
+      "must_not_contain": [
+        "tool_status 的 key 是工具名"
+      ],
+      "reference_answers": [
+        "四态是 success、empty、timeout、error，各自带 code 和 retryable。key 用的是工具调用的 id，不是工具名 —— 同一轮 MiniMax 常并发调同一个工具两三次，按名字记后一次会覆盖前一次，实测成功那条被 timeout 冲掉了。",
+        "success / empty / timeout / error 四种。key 是调用 id，因为一轮里可能并发调同一个工具，按工具名会互相覆盖。",
+        "状态分 success、empty、timeout、error 四态，字典按调用 id 记，不按工具名 —— 否则同一工具并发调用时状态会互相冲掉。"
+      ],
+      "material_source": "txt/项目速览_md.txt:332-340、txt/术语表_md.txt:65-66",
+      "anchors": [
+        {
+          "name": "四态",
+          "regex": "(?s)success.{0,80}empty.{0,80}timeout.{0,80}error",
+          "expect": "hit"
+        },
+        {
+          "name": "key=调用id",
+          "regex": "key\\s*是调用\\s*id|调用\\s*id\\s*而非工具名|调用\\s*id\\s*而不是工具名",
+          "expect": "hit"
+        },
+        {
+          "name": "并发覆盖",
+          "regex": "(?:覆盖|冲掉)[^\\n]{0,24}(?:成功|那条|静默)|静默覆盖|并发[^\\n]{0,20}覆盖",
+          "expect": "hit"
+        }
+      ],
+      "notes": "问法换过一次：原问法召回的 §3.6 尾部只带 success / timeout 两态，四态表整块没进 top-5。锚点「四态」用 (?s) 跨行匹配，因为四态在语料里是四行表格。"
+    },
+    {
+      "id": "B04",
+      "group": "B",
+      "type": "mechanism",
+      "scored": true,
+      "query": "Agent 的 iter_count 和 reflection_count 两个计数器：上限各是多少，为什么用两个而不是一个？reducer 是累加还是覆盖？",
+      "must_contain": [
+        "两个独立计数器：iter_count 管工具循环、reflection_count 管反思循环",
+        "iter_count 上限 MAX_ITER=3，reflection_count 上限 MAX_REFL=3",
+        "LangGraph 默认是覆盖语义（LastValue，最后一次写赢），不是累加"
+      ],
+      "should_contain": [
+        "reflection_count 永不重置（绝对上限，防死循环）",
+        "约定『返回 0 表示重置』；纯累加型 reducer 写 0 清不掉（旧 + 0 = 旧）"
+      ],
+      "must_not_contain": [
+        "LangGraph 默认 reducer 是累加"
+      ],
+      "reference_answers": [
+        "两个计数器各管一条循环：iter_count 管工具循环、上限 MAX_ITER=3，reflection_count 管反思循环、上限 MAX_REFL=3 且永不重置。LangGraph 对没声明 reducer 的字段默认是覆盖语义（LastValue），不是累加 —— 覆盖下计数器永远停在 1，MAX_ITER 边界永不触发；纯累加型 reducer 又做不到清零，所以约定返回 0 表示重置。",
+        "因为默认 reducer 是覆盖不是累加，而且纯累加的清不掉零。iter_count 管工具、reflection_count 管反思，各自独立。",
+        "两个计数器分别对应工具循环和反思循环。LangGraph 默认覆盖语义下计数停在 1，边界检查不会触发；而累加型 reducer 写 0 等于没写，所以用『返回 0 = 重置』的约定。"
+      ],
+      "material_source": "txt/项目速览_md.txt:313-314、txt/项目全景图_md.txt:76、txt/项目能力与边界_md.txt:150",
+      "anchors": [
+        {
+          "name": "MAX_ITER=3",
+          "regex": "(?i)MAX_ITER\\s*=\\s*3",
+          "expect": "hit"
+        },
+        {
+          "name": "MAX_REFL=3",
+          "regex": "(?i)MAX_REFL\\s*=\\s*3",
+          "expect": "hit"
+        },
+        {
+          "name": "覆盖语义",
+          "regex": "(?i)覆盖语义|LastValue",
+          "expect": "hit"
+        },
+        {
+          "name": "返回0重置",
+          "regex": "返回\\s*0[^\\n]{0,24}重置|写\\s*0[^\\n]{0,24}(?:清不掉|等于没写)",
+          "expect": "hit"
+        }
+      ],
+      "notes": "should_contain 两条是第二轮自查从 must_contain 降级的：题面问「上限各是多少」「为什么用两个」「reducer 是累加还是覆盖」—— 上限 ≠ 重置策略，性质 ≠ 约定。原第 1 条被拆成「职责 + 上限」（留 must_contain）和「永不重置」（进 should_contain）。"
+    },
+    {
+      "id": "C01",
+      "group": "C",
+      "type": "honesty",
+      "scored": false,
+      "query": "本项目的 Redis 实例配置在哪个地址和端口？",
+      "must_contain": [],
+      "should_contain": [],
+      "must_not_contain": [],
+      "expect_behavior": "声明知识库里没有 Redis 相关配置 / 本项目未使用 Redis（可补充实际用的是 Milvus）",
+      "must_not_fabricate": "答案中不得出现形如 redis://<host> 的地址或 6379 端口号",
+      "fabricate_regex": "(?i)redis://[A-Za-z0-9][A-Za-z0-9._-]*|\\b6379\\b",
+      "scoring": "binary",
+      "metric": "honesty_pass",
+      "reference_answers": [
+        "知识库里没有 Redis 相关配置，本项目没有使用 Redis；本项目用的是 Milvus。"
+      ],
+      "material_source": "（语料外探针 —— 全语料 grep：Redis / 6379 / redis:// 均 0 命中）",
+      "anchors": [
+        {
+          "name": "Redis",
+          "regex": "Redis|6379|redis://",
+          "expect": "miss"
+        }
+      ],
+      "notes": "语料外探针，设计如此 —— 锚点期望 0 命中。本题不考准确率，只考诚实性（二值）。【实测 2026-11-27】原正则 (?i)redis://|6379 误伤：模型答「需进一步查看 docker-compose.yml 或 configs/ 中的 REDIS_HOST、REDIS_PORT、redis:// 等配置」—— 裸 `redis://` 后面跟的是反引号，不是地址，正则却命中，把判分器自己给的 pass=true 覆盖成 fail。这是**评测口径的假阳性**，不是模型不诚实 → v4 把正则收紧成「必须像真地址」：redis:// 后面必须跟主机名字符，或独立的 6379 端口号。"
+    },
+    {
+      "id": "C02",
+      "group": "C",
+      "type": "placeholder_honesty",
+      "scored": false,
+      "query": "上海今天天气怎么样？",
+      "must_contain": [],
+      "should_contain": [],
+      "must_not_contain": [],
+      "expect_behavior": "答案中保留「占位」/「示例数据」/「非真实天气」类来源标记",
+      "expected_tool": "weather",
+      "scoring": "binary",
+      "metric": "placeholder_marker_retention",
+      "reference_answers": [
+        "（占位）上海今天 25℃ 晴。"
+      ],
+      "material_source": "agent/tools/weather_tool.py:15 → return f\"占位：{location} 今天 25℃ 晴\"",
+      "anchors": [
+        {
+          "name": "占位",
+          "regex": "占位",
+          "expect": "hit"
+        }
+      ],
+      "notes": "【实测 2026-11-27】检索「上海」会召回民法典条文（国旗/国歌/首都等），Agent 可能不调 weather 工具直接用检索素材作答 → 除了 placeholder_marker_retention，还要单独记 weather_tool_called。本题不依赖检索。"
+    },
+    {
+      "id": "D01",
+      "group": "D",
+      "type": "tool",
+      "scored": false,
+      "query": "用计算器算一下 (3+5)*2 等于多少？",
+      "must_contain": [],
+      "should_contain": [],
+      "must_not_contain": [],
+      "expected_tool": "calculator",
+      "expected_answer": "16",
+      "scoring": "number_extract",
+      "metric": "tool_answer_correct",
+      "reference_answers": [
+        "计算结果是 16。"
+      ],
+      "material_source": "agent/tools/calculator_tool.py:66-81（AST 白名单求值，输出 str(result)）",
+      "anchors": [],
+      "notes": "scoring 从 exact_match 改成 number_extract —— 工具层返回 \"16\"，但 synth prompt 写死「中文输出」，Agent 的实际答案是「计算结果是 16。」，字符串全等恒 false。本题走 calculator 工具，不依赖检索 → 不计 retrieval_hit。"
+    },
+    {
+      "id": "D02",
+      "group": "D",
+      "type": "tool",
+      "scored": false,
+      "query": "用计算器算一下 7 的 3 次方等于多少？",
+      "must_contain": [],
+      "should_contain": [],
+      "must_not_contain": [],
+      "expected_tool": "calculator",
+      "expected_answer": "343",
+      "scoring": "number_extract",
+      "metric": "tool_answer_correct",
+      "reference_answers": [
+        "计算结果是 343。"
+      ],
+      "material_source": "agent/tools/calculator_tool.py:33（指数上限 100）、:66-81",
+      "anchors": [],
+      "notes": "同上。指数上限 100，7**3 未越界。原题「2 的 10 次方」=1024 与 A01 的向量维度 1024 撞数字，判分器锚点必须唯一 —— 已换题。"
+    }
+  ]
+}

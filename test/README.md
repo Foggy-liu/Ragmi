@@ -1,7 +1,7 @@
 # test/ 目录说明
 
 > **实测日期：2026-11-15 / 目录整理 + 4 层测试体系落地：2026-11-16 / 债务清零 + 新增工具层：2026-11-17
-> / 过时脚本移出版本库 + 离线评估迁到 `test/eval/`：2026-11-22**。
+> / 过时脚本移出版本库 + 离线评估迁到 `test/eval/`：2026-11-22 / 新增答案质量评估 `test/eval_quality/`：2026-11-27**。
 > 下面每一行的"结果"都是实跑出来的，不是推断。
 >
 > **这个文件是 `test/` 的唯一索引**。当前测试体系的完整设计与落地状态见
@@ -29,11 +29,18 @@ test/
 │   ├── test_browser_e2e.py     #   E1–E8（标 e2e，假后端）
 │   ├── real_stack_check.py     #   真栈全接口体检（**非 pytest**，见下）
 │   └── _artifacts/             #   真栈产物（截图 + HTML 报告，已 gitignore）
-├── eval/                       # 离线工具路由评估（**非 pytest**，唯一活着的离线评估）
+├── eval/                       # 离线工具路由评估（**非 pytest**）
 │   ├── run_agent_eval.py       #   跑 12 个 case 出路由准确率 + 稳定性
 │   ├── data/
 │   │   ├── agent_test_cases.json    #   评估集（12 个 case）
-│   │   └── agent_eval_results.json  #   最新跑分快照（2026-11-18：75.0% = 9/12）
+│   │   └── agent_eval_results.json  #   最新跑分快照（2026-11-26：91.7% = 11/12）
+│   └── README.md               #   跑法 + 数字怎么读
+├── eval_quality/               # 答案质量评估（**非 pytest**，线 A 端到端 + 线 B 反思消融）
+│   ├── judge_answer_quality.py #   判分器（M2.5 盲评）
+│   ├── run_answer_quality_eval.py  # 线 A 主脚本（12 题，走生产 Agent 图）
+│   ├── reflect_ablation_eval.py    # 线 B 主脚本（48 用例）
+│   ├── data/                   #   题集 + 消融语料（进版本库）
+│   ├── results/                #   快照（本地，gitignore 待补）
 │   └── README.md               #   跑法 + 数字怎么读
 ├── probes/                     # 一次性探针脚本（**已 gitignore，不上传仓**）
 ├── archive/                    # 过时测试脚本的只读归档（**已 gitignore，不上传仓**）
@@ -54,6 +61,10 @@ norecursedirs = archive probes eval .* build dist node_modules venv __pycache__
 ```
 
 → `test/probes/`、`test/archive/`、`test/eval/` **永不收集**。
+
+`test/eval_quality/` 同样**不会被收集** —— 它不在 `norecursedirs` 里，但目录下
+三个脚本都不匹配 `python_files = test_*.py`。实测（2026-11-27）：
+`pytest --collect-only -q` → **112 tests collected**，与加该目录之前一致。
 
 **marker**：`slow`（需真实 Milvus/Ollama/MiniMax）、`e2e`（浏览器）。
 
@@ -183,7 +194,8 @@ python -m playwright install chromium-headless-shell
 
 ### `eval/` —— 离线工具路由评估（**非 pytest**，2026-11-22 从 `archive/` 迁出）
 
-`test/` 下**唯一活着的离线评估**。跑 12 个 case，量 Agent"该不该调 `rag_search`"的
+`test/` 下**两条活着的离线评估之一**（另一条是 `eval_quality/`，见下）。
+跑 12 个 case，量 Agent"该不该调 `rag_search`"的
 路由准确率 + 稳定性。
 
 ```bash
@@ -196,12 +208,60 @@ PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock     # reflect �
 
 | 文件 | 内容 | 状态 |
 |---|---|---|
-| `eval/run_agent_eval.py` | 评估入口 | ✅ 活着（2026-11-18 修好四处失效） |
-| `eval/data/agent_test_cases.json` | 12 个 case（query + 期望路由） | ⚠️ **口径是 v1 二值**（`expected_tool` 只有 chat/rag，没有 calculator/weather/web_search）→ 数字不可当基线，见 `docs/status/项目现状.md` §8 P0-1 |
-| `eval/data/agent_eval_results.json` | 最新跑分快照 | ✅ **2026-11-18：路由准确率 75.0%（9/12）、稳定性 12/12、21 次工具调用全 `success`、中位耗时 25.79 秒** |
+| `eval/run_agent_eval.py` | 评估入口 | ✅ 活着（2026-11-18 修好四处失效；**2026-11-26 加口径自检 + 按日期留档**） |
+| `eval/data/agent_test_cases.json` | 12 个 case（query + 期望路由） | ✅ **口径已重建**（2026-11-26）：`expected_tool` 改成**具体工具名**（`rag_search` / `calculator` / `weather` / `web_search` / `none`），**并行报旧二值口径**保证历史可比 |
+| `eval/data/agent_eval_results.json` | 最新跑分快照 | ✅ **2026-11-26：路由准确率 91.7%（11/12，具体工具名口径；二值口径同为 91.7%）、稳定性 12/12、17 次工具调用全 `success`、中位耗时 16.57 秒** |
 
-> ⚠️ **75.0% 低于 90% 的合格线**。2026-11-15 是 83.3%（10/12），差异**全部来自 T07 一次翻转**
-> —— **LLM 路由本身有随机性**，两个数都只是单次采样，不是基线。
+> ⚠️ **单次采样不是基线**。75.0%（11-18）→ 91.7%（11-26）之间**代码一行没改**，
+> 差的两个 case（T07/T10）纯粹是 LLM 翻转 → **LLM 路由本身有随机性**。
+> 快照按日期留档（`agent_eval_results_2026-11-18.json` / `_2026-11-26.json`），**永不覆盖**。
+> **仍未进 CI** —— 见 `docs/status/项目现状.md` §8 P0-1。
+
+### `eval_quality/` —— 答案质量评估（**非 pytest**，2026-11-27 新增）
+
+`test/eval/` 测的是**工具路由准不准**；`test/eval_quality/` 测的是**答得好不好**。
+两条线**完全隔离**：不共用数据文件、不共用脚本、不改既有任何东西。
+
+| 线 | 测什么 | 要 Milvus | 要判分器 | 脚本 |
+|---|---|---|---|---|
+| **线 A** | 端到端：Agent 拿到知识库回答一道题，答案**好不好** | ✅ | ✅ | `run_answer_quality_eval.py` |
+| **线 B** | 机制层：反思节点判得**准不准** | ❌ | ❌ | `reflect_ablation_eval.py` |
+
+```bash
+cd D:/PythonProject/ragmi
+PYTHONIOENCODING=utf-8 python test/eval_quality/judge_answer_quality.py --selftest   # 判分器自检闸门
+PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --recall-check
+PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --repeat 3
+PYTHONIOENCODING=utf-8 python test/eval_quality/reflect_ablation_eval.py --repeat 3
+```
+
+**实测结果（2026-11-27，3 遍）**：
+
+| 线 | 指标 | 实测 |
+|---|---|---|
+| 线 A | 总分（A/B 8 题） | **0.9333**（0.9125 / 0.9625 / 0.9250，极差 0.05） |
+| 线 A | 全局 hit_rate（24 条必答） | 0.9305（极差 0.1667） |
+| 线 A | depth_rate（6 条深度，**不进总分**） | 0.8333（极差 0） |
+| 线 A | 幻觉 | 36 次运行里 1 次（B03 第 3 遍） |
+| 线 A | 检索命中率 | 0.8333（B02 **3/3 遍都是 0** —— 瓶颈在检索改写，不在生成） |
+| 线 A | C 组诚实性 | C01 2/3 通过；**C02 1/3 通过 → 众数失败**（占位标记被 synth 剥掉） |
+| 线 A | D 组工具 | D01 / D02 **3/3 通过** |
+| 线 A | 闭卷探针（R7） | 8 题**无一剔除**；B02 闭卷 0.667 → B 组一半机制是通用工程知识 |
+| 线 B | 真阳性率（标准素材 24 格 × 3 遍） | **100%**（36/36，**极差 0**） |
+| 线 B | 假阳性率 | **33.3%**（8/24，极差 12.5 个百分点）—— **8/8 都是「引用」规则，不是忠实性误报**（忠实性误报 **0/24**；good-1 判 rewrite 8/12 vs good-2 **0/12**） |
+| 线 B | 不可判定率（④ 编造型） | **0%**（0/12）—— reflect 判的是 `rewrite`，「结构性盲区」前提被推翻 |
+| 线 B | 无关素材 24 格 × 3 遍 | **72/72 判 `re_iterate`** → 素材充分性 100% |
+| 线 B | 稳定性 | 48 格里 **47 格三遍判定完全一致**；唯一翻转格 `B01-good-1-S`（end/rewrite/rewrite） |
+| 线 B | **改后改善率**（`--improve`） | **真·坏答案 11/12 变好，均值 +0.5139**，幻觉修好 3 例；但 **good-1 误伤组 −0.1667** → 合计净值 **+0.2895** |
+| 线 B | 复现性 | 两次独立 3 遍跑：**逐遍指标与 48/48 格判定向量完全相同**，144/144 格 critique 措辞不同 |
+
+- 快照在 `test/eval_quality/results/`（**永不覆盖**，同名加 `-2`/`-3`），
+  每份带 `corpus_sha256` / `git_commit` / `rubric_version` / `executor_model` /
+  `judge_model` / `cases_hash`。
+- 完整口径、跑法、注意事项见 **`test/eval_quality/README.md`**；
+  实测结论与归因见 `docs/task/答案质量评估设计.md` §12（本地文档，不进版本库）。
+- ⚠️ **产品代码零改动**：线 B 直接调 `reflect_node(state, llm=…)`（生产 prompt 原样），
+  线 A 直接调 `build_graph()`（`ask()` 只返回 5 个字段，拿不到工具调用与召回片段）。
 
 ### `probes/` —— 手动探针（3 个，**已 gitignore，不上传仓**）
 
@@ -282,7 +342,7 @@ PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py
 | `archive/scripts/evil_proxy.py` | 假代理：拦 `/api/tokenize` 返 502，其它透传 | ✅ 正常（实测：透传 200 / 拦截 502）。**与 Agent 无关** |
 | `archive/scripts/repro_embed_clients.py` | 对比直连 Ollama HTTP vs `langchain_ollama` 的 4 条路径 | ✅ **当前环境 4/4 全过**（无代理干扰）。**与 Agent 无关** |
 | ~~`archive/data/agent_test_cases.json`~~ | — | ✅ **已迁到 `eval/data/`** |
-| ~~`archive/data/agent_eval_results.json`~~ | — | ✅ **已迁到 `eval/data/`**（内容也更新为 2026-11-18 的 75.0% 快照） |
+| ~~`archive/data/agent_eval_results.json`~~ | — | ✅ **已迁到 `eval/data/`**（内容已更新为 2026-11-26 的 91.7% 快照；日期快照同目录并存） |
 | `archive/data/v1_baseline_results.json` | v1 baseline（75%，9/12，平均 48.28s） | ✅ 只留本地 |
 
 ### `fixtures/` —— 手工测试素材
