@@ -32,3 +32,36 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# ---- 以下不进镜像（Dockerfile 是 COPY . .，没有 .dockerignore 就会一起烤进去）----
+
+# 私有协作规则与私人草稿：.gitignore 已经排除了，但镜像不看 .gitignore
+RULE.md
+docs/personal/
+docs/note/
+docs/archive/
+docs/task/
+# 本地笔记工具的元数据（Obsidian / Syncthing）
+docs/.obsidian/
+docs/.stfolder/
+docs/.trash/
+docs/.stignore
+.claude/
+.understand-anything/
+.idea/
+.pytest_cache/
+
+# 运行时数据：compose 里 api 服务已经按 volume 挂载 ./documents 与 ./txt，
+# 镜像里不用再烤一份（语料 5.1MB + 解析产物 1.2MB）
+documents/
+txt/
+data/
+
+# 测试与覆盖率产物不进生产镜像
+test/
+.coverage
+htmlcov/
+
+# 本地数据库文件
+**/*.db
+**/*.sqlite*

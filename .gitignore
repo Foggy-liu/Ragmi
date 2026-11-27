@@ -57,8 +57,10 @@ docs/task/*
 !docs/task/答案质量评估*.md
 
 # txt/ 和 documents/ 内容不上传（运行时生成/用户文件），但空目录本身是程序必需的
+# txt/ 额外放行一份 README —— 说明这个目录是什么、为什么只入库目录本身
 txt/*
 !txt/.gitkeep
+!txt/README.md
 documents/*
 !documents/.gitkeep
 

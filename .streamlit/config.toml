@@ -4,3 +4,13 @@ backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"
 textColor = "#262730"
 font = "sans serif"
+
+# 关闭匿名使用统计。Streamlit 1.52.2 的默认值是 true —— 页面一打开就把使用数据
+# 上报到 streamlit.io。这个仓库是给别人 clone 下来跑的，不该默认替用户往外发数据。
+[browser]
+gatherUsageStats = false
+
+# 上传单个文件的上限（MB）。仓库管理页走 st.file_uploader，
+# 这个值就是前端能选的最大文件大小；默认值也是 200，写出来是为了让约束可见。
+[server]
+maxUploadSize = 200
