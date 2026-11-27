@@ -23,13 +23,21 @@ from langgraph.graph.message import add_messages
 def _reset_or_inc(old: int, new: int) -> int:
     """带重置语义的累加 reducer（用于 iter_count）。
 
-    LangGraph reducer 默认是纯累加：(old or 0) + (new or 0)。
-    但 reflect_node 需要"重置"语义（rewrite/re_iterate 时把 iter 归 0），
-    用累加 reducer 做不到（旧 + 0 = 旧）。
+    ⚠️ LangGraph 对**没有声明 reducer** 的字段，默认行为是**覆盖**
+    （LastValue：最后一次写赢），不是累加。
+
+    所以本项目的节点返回的是**增量**而不是绝对值：
+    iter_node 返回 `{"iter_count": 1}` 表示 "+1"，reflect_node 返回
+    `{"iter_count": 0}` 表示 "清零"。若用默认的覆盖语义，iter_count
+    每次都会被覆写成 1、永远不涨 → `should_continue` 的
+    `iter_count >= MAX_ITER` 永不触发 → Agent 无限循环调工具。
 
     约定：
     - 节点返回 0 → 显式重置（reflect_node 用）
     - 节点返回 > 0 → 累加（iter_node 用）
+
+    注：纯累加型的 reducer（见 `_inc_refl`）写 0 是清不掉的
+    （旧 + 0 = 旧）—— "清零"能力是这个自定义 reducer 顺带带来的。
     """
     if new == 0:
         return 0
