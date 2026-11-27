@@ -1,0 +1,270 @@
+{
+  "summary": {
+    "measured_at": "2026-11-26 22:42:01",
+    "rubric": "tool_name",
+    "rubric_note": "主口径按具体工具名判对错；同时并行报旧二值口径 rag/chat，与历史快照可比",
+    "total": 12,
+    "correct": 11,
+    "routing_accuracy": 91.66666666666666,
+    "routing_accuracy_binary_rubric": 91.66666666666666,
+    "correct_binary_rubric": 11,
+    "rubric_disagreements": [],
+    "stability": 100.0,
+    "exceptions": 0,
+    "wrong_tool": 1,
+    "reflect_final_action": {
+      "end": 12
+    },
+    "reflection_count_distribution": {
+      "1": 11,
+      "2": 1
+    },
+    "tool_status_distribution": {
+      "success": 17
+    },
+    "tool_calls_total": 17,
+    "elapsed_median_sec": 16.57,
+    "mode": "real",
+    "note": null
+  },
+  "details": [
+    {
+      "id": "T01",
+      "query": "你是谁",
+      "expected": "none",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "我是一个基于已有文档和素材提供问答的 AI 助手。本轮未在文档中找到关于具体身份或模型配置的更多资料。",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 6.13
+    },
+    {
+      "id": "T02",
+      "query": "1+1等于多少",
+      "expected": "calculator",
+      "actual": "calculator",
+      "actual_tools": [
+        "calculator"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "1+1=2（来源：calculator）",
+      "iter_count": 2,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success"
+      ],
+      "elapsed_sec": 6.74
+    },
+    {
+      "id": "T03",
+      "query": "你好",
+      "expected": "none",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "你好！有什么可以帮你的吗？",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 4.44
+    },
+    {
+      "id": "T04",
+      "query": "在我的知识库里有什么内容",
+      "expected": "rag_search",
+      "actual": "rag_search",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "根据本轮检索结果，你的知识库目前主要包含以下内容：\n\n## 1. RAG / Agent 项目资料\n- `docs/STATUS.md`：项目入口  \n- `d...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 19.98
+    },
+    {
+      "id": "T05",
+      "query": "我之前上传的文档讲了什么",
+      "expected": "rag_search",
+      "actual": "rag_search",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "从当前检索到的片段看，你之前上传的文档主要分为两大类：\n\n## 1. AI Agent 项目与学习计划\n\n其中一组是“4 份答案文档”的导航和使用指南，写于 2...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 35.69
+    },
+    {
+      "id": "T06",
+      "query": "RAG 的核心定义是什么",
+      "expected": "rag_search",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": false,
+      "correct_binary_rubric": false,
+      "status": "wrong_tool",
+      "response_preview": "当前未提供可引用的文档素材，以下为通用定义：\n\n**RAG（Retrieval-Augmented Generation，检索增强生成）**是一种将**外部信息...",
+      "iter_count": 0,
+      "reflection_count": 2,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 16.57
+    },
+    {
+      "id": "T07",
+      "query": "Python 的 list 和 tuple 有什么区别",
+      "expected": "none",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "未在文档中找到相关资料，因此以下为通用说明（非文档引用）。\n\nPython 中，`list` 和 `tuple` 都是有序、可重复的序列，主要区别如下：\n\n| ...",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 8.34
+    },
+    {
+      "id": "T08",
+      "query": "你了解我最近读的书吗",
+      "expected": "rag_search",
+      "actual": "rag_search",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "了解一些，但还不能确定你最近读的是哪几本具体著作。根据现有资料，你近期接触的内容大致有两类：\n\n1. **RAGMI／Agent v2 项目文档**  \n   ...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 19.97
+    },
+    {
+      "id": "T09",
+      "query": "上海今天天气怎么样",
+      "expected": "weather",
+      "actual": "weather",
+      "actual_tools": [
+        "weather"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "上海今天天气晴，气温约 **25℃**。  \n来源：weather",
+      "iter_count": 2,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success"
+      ],
+      "elapsed_sec": 7.77
+    },
+    {
+      "id": "T10",
+      "query": "介绍下 LangGraph",
+      "expected": "none",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "未在文档中找到相关资料，因此本回答不附文档引用。以下是 LangGraph 的通用介绍。\n\n## LangGraph 是什么\n\nLangGraph 是 Lang...",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 18.57
+    },
+    {
+      "id": "T11",
+      "query": "我的简历里有什么",
+      "expected": "rag_search",
+      "actual": "rag_search",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "根据现有资料，未检索到 `docs/personal/简历.md` 的完整正文，但可以确认以下内容：\n\n### 基本求职信息\n- 姓名：柳依蕾\n- 届别：202...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 33.96
+    },
+    {
+      "id": "T12",
+      "query": "解释下什么是 ReAct 模式",
+      "expected": "none",
+      "actual": "none",
+      "actual_tools": [],
+      "correct": true,
+      "correct_binary_rubric": true,
+      "status": "correct",
+      "response_preview": "未在文档中找到相关资料，以下基于通用知识解释。\n\n## 什么是 ReAct 模式？\n\n**ReAct** 是 **Reasoning（推理）+ Acting（行...",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 11.75
+    }
+  ]
+}

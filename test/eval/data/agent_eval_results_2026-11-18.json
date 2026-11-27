@@ -1,0 +1,264 @@
+{
+  "summary": {
+    "total": 12,
+    "correct": 9,
+    "routing_accuracy": 75.0,
+    "stability": 100.0,
+    "exceptions": 0,
+    "wrong_tool": 3,
+    "tool_status_distribution": {
+      "success": 21
+    },
+    "elapsed_median_sec": 25.79,
+    "mode": "real",
+    "note": null,
+    "reflect_final_action": {
+      "end": 12
+    },
+    "reflection_count_distribution": {
+      "1": 10,
+      "2": 2
+    },
+    "tool_calls_total": 21
+  },
+  "details": [
+    {
+      "id": "T01",
+      "query": "你是谁",
+      "expected": "chat",
+      "actual": "chat",
+      "actual_tools": [],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "我是一个 AI 助手，可以帮助你解答问题、整理信息和撰写内容。未在文档中找到相关资料。",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 10.55
+    },
+    {
+      "id": "T02",
+      "query": "1+1等于多少",
+      "expected": "chat",
+      "actual": "chat",
+      "actual_tools": [
+        "calculator"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "1+1 等于 **2**。  \n引用：【calculator】",
+      "iter_count": 2,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success"
+      ],
+      "elapsed_sec": 10.03
+    },
+    {
+      "id": "T03",
+      "query": "你好",
+      "expected": "chat",
+      "actual": "chat",
+      "actual_tools": [],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "你好！有什么我可以帮你的吗？",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 5.56
+    },
+    {
+      "id": "T04",
+      "query": "在我的知识库里有什么内容",
+      "expected": "rag",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "根据本轮检索结果，你的知识库中目前可确认主要有以下三类内容。由于部分结果是重复或截断的片段，以下并不一定涵盖知识库的全部资料。\n\n### 1. 动画故事与剧本类...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 46.22
+    },
+    {
+      "id": "T05",
+      "query": "我之前上传的文档讲了什么",
+      "expected": "rag",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "从当前检索到的内容看，你上传的文档主要是一份**法律论文写作与文献引注规范指南**，并穿插了若干《民法典》《刑法》条文作为示例。具体包括：\n\n### 一、文献选...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 25.79
+    },
+    {
+      "id": "T06",
+      "query": "RAG 的核心定义是什么",
+      "expected": "rag",
+      "actual": "chat",
+      "actual_tools": [],
+      "correct": false,
+      "status": "wrong_tool",
+      "response_preview": "未在文档中找到相关资料。\n\n通用定义：**RAG（Retrieval-Augmented Generation，检索增强生成）**是一种先从外部知识库中检索与问...",
+      "iter_count": 1,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 12.06
+    },
+    {
+      "id": "T07",
+      "query": "Python 的 list 和 tuple 有什么区别",
+      "expected": "chat",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "web_search"
+      ],
+      "correct": false,
+      "status": "wrong_tool",
+      "response_preview": "本轮检索仅返回了“Python list vs tuple difference mutable performance memory”的占位摘要，未保留网页正...",
+      "iter_count": 3,
+      "reflection_count": 2,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 70.45
+    },
+    {
+      "id": "T08",
+      "query": "你了解我最近读的书吗",
+      "expected": "rag",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "我只能根据这次检索到的材料，**大致了解你近期关注的内容，但还不能准确说出你最近读了哪些书**。\n\n目前材料主要涉及：\n\n- **《中华人民共和国民法典》相关条...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 28.7
+    },
+    {
+      "id": "T09",
+      "query": "上海今天天气怎么样",
+      "expected": "chat",
+      "actual": "chat",
+      "actual_tools": [
+        "weather"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "上海今天天气晴，气温约 **25℃**。  \n来源：【weather】上海今天 25℃ 晴",
+      "iter_count": 2,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success"
+      ],
+      "elapsed_sec": 4.27
+    },
+    {
+      "id": "T10",
+      "query": "介绍下 LangGraph",
+      "expected": "chat",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": false,
+      "status": "wrong_tool",
+      "response_preview": "## 一句话介绍\n\n**LangGraph 是一个用于构建有状态、可控、可持久化 Agent 的工作流编排框架。**它把 Agent 的执行过程表示成一张“状态...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 83.23
+    },
+    {
+      "id": "T11",
+      "query": "我的简历里有什么",
+      "expected": "rag",
+      "actual": "rag",
+      "actual_tools": [
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "未在文档中找到相关资料。当前检索到的内容主要是法律条文和提示词示例，没有您的简历信息。\n\n请上传简历文件或粘贴简历文本，我可以帮您整理其中的个人信息、教育背景、...",
+      "iter_count": 3,
+      "reflection_count": 1,
+      "next_action": "end",
+      "tool_status": [
+        "success",
+        "success",
+        "success"
+      ],
+      "elapsed_sec": 10.53
+    },
+    {
+      "id": "T12",
+      "query": "解释下什么是 ReAct 模式",
+      "expected": "chat",
+      "actual": "chat",
+      "actual_tools": [],
+      "correct": true,
+      "status": "correct",
+      "response_preview": "## 什么是 ReAct 模式？\n\n**ReAct** 是 **Reasoning（推理）+ Acting（行动）** 的缩写，常用于大语言模型 Agent。它...",
+      "iter_count": 1,
+      "reflection_count": 2,
+      "next_action": "end",
+      "tool_status": [],
+      "elapsed_sec": 26.31
+    }
+  ]
+}

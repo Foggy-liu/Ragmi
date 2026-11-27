@@ -8,10 +8,22 @@
 - --mock：只把 reflect 的 LLM 换成 MockLLM（agent 仍用真实 LLM），
          跳过反思那一步的 LLM 成本。稳定性和路由准确率都报。
 
-输出：
-- 默认（真实 LLM）→ test/eval/data/agent_eval_results.json
-- --mock → test/eval/data/agent_eval_results_mock.json
-  （**故意分开**：mock 结果不能覆盖真实 LLM 的基线快照）
+输出（2026-11-26 改）：
+- 真实 LLM → test/eval/data/agent_eval_results_<YYYY-MM-DD>.json
+  同名已存在则加 -2 / -3 后缀 —— **快照永不覆盖**。
+  理由：每个快照是"这套系统在某一天的路由决策长什么样"的留档，
+  多个快照并列 = 波动区间，比一个孤立的数字诚实。
+  同时更新 agent_eval_results.json（latest，供文档引用）。
+- --mock → test/eval/data/agent_eval_results_mock.json（gitignore，不进仓）
+
+判定口径（2026-11-26 改）：
+- **主口径 = 具体工具名**：expected_tool 是具体工具名（rag_search / calculator /
+  weather / web_search）或 "none"（不该调任何工具）。判"实际调用的工具里有没有它"。
+- **同时并行报旧二值口径**（rag / chat）：由主口径无损反推
+  （expected=rag_search→"rag"，其余→"chat"），保证历史快照（2026-11-18 的
+  75.0%）与今天的结果**可直接对比**。
+- 为什么不只留二值：二值口径下"该调 calculator 却调了 web_search"会被判对
+  （只要没调 rag_search 就算 chat），这类错误根本看不见。
 
 2026-11-18 修复（P0-1 的第一步，见 docs/status/项目现状.md §8 P0-1）：
 原脚本在 v2.2 全面失效，四处坏：
@@ -149,6 +161,18 @@ def main():
     graph = build_graph()
     details = []
 
+    # 口径自检：expected_tool 应该是具体工具名或 "none"，
+    # 而不是旧的二值 "chat"/"rag"。发现旧值直接报错 —— 静默跑出一个
+    # 混着两套口径的数字，比报错难查得多。
+    _BINARY_VALUES = {"chat", "rag"}
+    _legacy = [c["id"] for c in cases if c["expected_tool"] in _BINARY_VALUES]
+    if _legacy:
+        raise SystemExit(
+            f"agent_test_cases.json 里这些 case 还用旧的二值口径 {sorted(_legacy)}："
+            f"{sorted(_BINARY_VALUES)}\n"
+            f"请改成具体工具名（rag_search / calculator / weather / web_search / none）。"
+        )
+
     for case in cases:
         case_id = case["id"]
         query = case["query"]
@@ -158,22 +182,32 @@ def main():
         tools = t["actual_tools"]
         used_rag = "rag_search" in tools
 
-        # ★ 路由判定修正：只有调了 rag_search 才算 "rag"。
-        # 调 calculator / weather 属于 "chat" 侧（原口径会把它们误判成 rag）。
+        # ★ 主口径（2026-11-26）：按**具体工具名**判对错。
+        #   expected="none"       → 不该调任何工具，实际没调才算对
+        #   expected="calculator" → 实际调了 calculator 才算对
+        #   （旧二值口径会把"该调 calculator 却调了 web_search"判成对）
+        #
+        # ★ 旧二值口径并行计算，保证与历史快照（2026-11-18 的 75.0%）可直接对比：
+        #   期望 rag_search → "rag"；其余（含 none / calculator / weather）→ "chat"
+        #   实际：调了 rag_search → "rag"；否则 "chat"
         if t["error"] is not None:
             actual = "error"
             is_correct = False
             status = "exception"
             mark = "✗"
         else:
-            actual = "rag" if used_rag else "chat"
+            actual = "none" if not tools else tools[0]
             is_correct = (actual == expected)
             status = "correct" if is_correct else "wrong_tool"
             mark = "✓" if is_correct else "✗"
 
+        binary_expected = "rag" if expected == "rag_search" else "chat"
+        binary_actual = "rag" if used_rag else "chat"
+        binary_correct = (binary_actual == binary_expected)
+
         tool_desc = ",".join(tools) if tools else "(无)"
         print(
-            f"{case_id:<5}{expected:<7}{tool_desc[:20]:<22}{mark:<6}"
+            f"{case_id:<5}{expected:<12}{tool_desc[:20]:<22}{mark:<6}"
             f"{t['next_action']:<11}{t['elapsed']:>6.1f}  {query[:30]}"
         )
 
@@ -184,6 +218,7 @@ def main():
             "actual": actual,
             "actual_tools": tools,
             "correct": is_correct,
+            "correct_binary_rubric": binary_correct,
             "status": status,
             "response_preview": (t["answer"] or "")[:80] + ("..." if len(t["answer"] or "") > 80 else ""),
             "iter_count": t["iter_count"],
@@ -203,6 +238,18 @@ def main():
     stability = (total - exceptions) / total * 100 if total else 0
     evaluated = total - exceptions
     routing_accuracy = correct / evaluated * 100 if evaluated else 0
+
+    # ★ 旧二值口径（rag / chat）并行统计 —— 与历史快照直接可比。
+    #   期望：rag_search → "rag"；其余（none / calculator / weather / web_search）→ "chat"
+    #   实际：调了 rag_search → "rag"；否则 → "chat"
+    binary_correct = sum(1 for d in details if d["correct_binary_rubric"])
+    binary_accuracy = binary_correct / evaluated * 100 if evaluated else 0
+    # 两个口径判出来不同的 case —— 这正是二值口径"看不见的错误"清单
+    rubric_diff = [
+        {"id": d["id"], "expected": d["expected"], "actual_tools": d["actual_tools"]}
+        for d in details
+        if d["correct"] != d["correct_binary_rubric"]
+    ]
 
     # 机制维度统计 —— 用来回答"反思/工具机制到底有没有在起作用"
     #
@@ -225,10 +272,13 @@ def main():
     median = elapsed_list[len(elapsed_list) // 2] if elapsed_list else 0
 
     print("-" * 96)
-    print(f"\n总准确率: {correct}/{total} = {correct/total*100 if total else 0:.1f}%")
+    print(f"\n总准确率(主口径·具体工具名): {correct}/{total} = {correct/total*100 if total else 0:.1f}%")
     print(f"  - Tool Routing Accuracy: {correct}/{total - exceptions} = {routing_accuracy:.1f}%")
     print(f"  - Agent Stability: {total-exceptions}/{total} = {stability:.1f}%")
     print(f"  - Exceptions: {exceptions}, Wrong Tool: {wrong_tool}")
+    print(f"  - [旧二值口径 rag/chat, 供与历史快照对比]: {binary_correct}/{total - exceptions} = {binary_accuracy:.1f}%")
+    print(f"  - 两口径判定不一致的 case: {len(rubric_diff)} 个"
+          + (f" -> {[r['id'] for r in rubric_diff]}" if rubric_diff else ""))
     print(f"  - reflect 最终决策分布: {final_actions}")
     print(f"  - reflect 轮数分布 (reflection_count): {refl_counts}")
     print(f"  - 工具状态四态分布: {status_counter}")
@@ -238,33 +288,63 @@ def main():
         print("  - (--mock 模式: reflect 用 MockLLM，agent 用真实 LLM)")
 
     # 保存详细结果
-    # ★ --mock 写**另一个文件** —— mock 结果不能覆盖真实 LLM 的基线快照。
+    # ★ --mock 写**另一个文件** —— mock 结果不能覆盖真实 LLM 的快照。
     #   （2026-11-22 实测踩过：跑一次 --mock 把 75.0% 的真实快照冲成了 91.67%）
-    out_path = data_dir / (
-        "agent_eval_results_mock.json" if use_mock else "agent_eval_results.json"
-    )
+    #
+    # ★ 真实模式按日期留档，同名已存在就加 -2/-3 后缀 —— **快照永不覆盖**。
+    #   每个快照是"这套系统在某一天的路由决策"的留档，
+    #   多个快照并列 = 波动区间，比一个孤立的数字诚实。
+    #   同时更新 agent_eval_results.json 作为 latest（供文档引用）。
+    if use_mock:
+        out_path = data_dir / "agent_eval_results_mock.json"
+    else:
+        stamp = time.strftime("%Y-%m-%d")
+        out_path = data_dir / f"agent_eval_results_{stamp}.json"
+        n = 1
+        while out_path.exists():
+            n += 1
+            out_path = data_dir / f"agent_eval_results_{stamp}-{n}.json"
+
+    payload = {
+        "summary": {
+            "measured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "rubric": "tool_name",
+            "rubric_note": "主口径按具体工具名判对错；同时并行报旧二值口径 rag/chat，与历史快照可比",
+            "total": total,
+            "correct": correct,
+            "routing_accuracy": routing_accuracy,
+            "routing_accuracy_binary_rubric": binary_accuracy,
+            "correct_binary_rubric": binary_correct,
+            "rubric_disagreements": rubric_diff,
+            "stability": stability,
+            "exceptions": exceptions,
+            "wrong_tool": wrong_tool,
+            "reflect_final_action": final_actions,
+            "reflection_count_distribution": refl_counts,
+            "tool_status_distribution": status_counter,
+            "tool_calls_total": sum(status_counter.values()),
+            "elapsed_median_sec": median,
+            "mode": "mock" if use_mock else "real",
+            "note": "--mock 仅替换 reflect._llm，agent 仍用真实 LLM" if use_mock else None,
+        },
+        "details": details,
+    }
+
     out_path.write_text(
-        json.dumps({
-            "summary": {
-                "total": total,
-                "correct": correct,
-                "routing_accuracy": routing_accuracy,
-                "stability": stability,
-                "exceptions": exceptions,
-                "wrong_tool": wrong_tool,
-                "reflect_final_action": final_actions,
-                "reflection_count_distribution": refl_counts,
-                "tool_status_distribution": status_counter,
-                "tool_calls_total": sum(status_counter.values()),
-                "elapsed_median_sec": median,
-                "mode": "mock" if use_mock else "real",
-                "note": "--mock 仅替换 reflect._llm，agent 仍用真实 LLM" if use_mock else None,
-            },
-            "details": details,
-        }, ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     print(f"\n详细结果已保存: {out_path}")
+
+    # 真实模式额外更新 latest（agent_eval_results.json），供文档引用。
+    # ★ 日期快照才是历史留档；latest 只是"当前值"，被覆盖没关系。
+    if not use_mock:
+        latest = data_dir / "agent_eval_results.json"
+        latest.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"latest 已更新: {latest}")
 
 
 if __name__ == "__main__":
