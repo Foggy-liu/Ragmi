@@ -11,23 +11,24 @@ Before doing anything else in this repo, read these in order:
    (§D). It supersedes any older memory file.
 2. `docs/status/项目现状.md` — **the single source of truth for the current state**. §8 is a
    prioritized issue list (P0–P3) with file paths and line numbers; start work from there.
-3. `docs/status/项目全景图.md` — how the code is wired together: a 30-minute reading order,
-   the two data flows (offline ingest / online query), the Agent graph in detail, the 14
-   invariants that must not break, and a risk map.
+3. `docs/status/项目全景图.md` — how the code is wired together: a 30-minute reading order, the
+   two data flows (offline ingest / online query), the Agent graph in detail, the **15**
+   invariants that must not break (§5), and a risk map (§6).
 4. `docs/status/测试现状.md` — only when the task touches tests: what each script under `test/`
    actually measures and its measured result.
-5. `docs/status/项目优化.md` — what each past change did and what it left behind.
+5. `docs/status/项目优化.md` — what each past change did and what it left behind (this is where
+   the full incident narrative lives; CLAUDE.md keeps only the rule that came out of it).
 6. `docs/status/项目能力与边界.md` — only when asked "how good is this project / what can it
    do": measured limits, an explicit list of what it cannot do, and what is missing for
    productization.
 7. `docs/status/项目速览.md` + `docs/status/术语表.md` — **human onboarding** (not needed by
    Claude): the速览 expands 42 framework/project concepts with `file:line`, and the术语表 is a
    54-entry lookup table. Read these when a human asks "how do I understand this project" or
-   "what does this term mean" — they are the explanation layer over 项目现状.md.
+   "what does this term mean".
 
-Ground every statement in the code, not in prose: `docs/plan/`, `docs/note/`, `docs/archive/`, and
-the local-only `test/archive/` describe earlier versions and are stale in places. Do not quote them
-as current fact.
+Only `docs/plan/` and `docs/status/` are tracked by git. `docs/task/`, `docs/personal/`, `docs/note/`
+and `docs/archive/` are local-only. `docs/plan/` describes earlier versions and is stale in places —
+ground every statement in the code, not in prose.
 
 After reading, state briefly what the project is and which `§8` P-item you are picking up, then
 proceed. Keep `docs/status/项目现状.md` in sync with the code whenever `agent/` behavior changes.
@@ -75,10 +76,10 @@ curl http://localhost:8000/debug/simple
 
 `vector_main.py` reads parsed files from `txt/`. Upload processing places originals in `documents/` and parsing output in `txt/`.
 
-### Tests and evaluation
+### Pytest commands
 
 ```bash
-# Fast regression (seconds; no browser, no real LLM)
+# Fast regression (no browser, no real LLM)
 pytest -m "not slow and not e2e" -v
 
 # Browser E2E (keeps trace/video on failure)
@@ -95,102 +96,104 @@ pytest test/test_agent_flow.py -v
 pytest test/test_agent_flow.py::test_name -v
 ```
 
-`test/eval/` holds the **only live offline evaluation**: `run_agent_eval.py` (12 cases → tool-routing
-accuracy + stability) plus `data/agent_test_cases.json` (the eval set) and
-`data/agent_eval_results.json` (the latest snapshot: **75.0% = 9/12**, stability 12/12,
-21 tool calls all `success`, measured 2026-11-18). Run it from the repo root:
+There is no configured lint or build command. `pytest.ini` discovers `test/test_*.py`; not every script under `test/` is a pytest test.
+
+## Tests and evaluation
+
+### Two live offline evaluations (neither is a pytest case)
+
+Both are **non-pytest** (`pytest.ini` sets `norecursedirs = archive probes eval .* build dist node_modules venv __pycache__`;
+`eval_quality/` is not collected because no file matches `python_files = test_*.py`). Both need a real
+MiniMax key and **cost money**. Run both from the repo root.
+
+**① `test/eval/` — tool routing** (`run_agent_eval.py`, 12 cases → routing accuracy + stability)
 
 ```bash
 PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py            # real LLM
 PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock     # reflect uses a fake LLM
 ```
 
-Both modes need a real MiniMax key and cost money. It is **not** a pytest case (the filename does
-not match `python_files = test_*.py`; `pytest.ini` also lists `eval` in `norecursedirs`).
+Latest snapshot `data/agent_eval_results.json`: **75.0% = 9/12** (2026-11-18, 二值口径), stability
+12/12, 21 tool calls all `success`. Later runs on the *same* code: 83.3% (10/12, 2026-11-15) and
+**91.7% = 11/12** (2026-11-26, 具体工具名口径, double-reported alongside the binary rubric). The
+spread is **LLM sampling, not code drift** — so quote the range 75%–92% and always say "single
+sample". Stable错例 across runs: **T06** only.
 
-`test/archive/` and `test/probes/` hold the outdated v1/v2.1 scaffolding and the one-off probe
-scripts. Both were superseded by pytest cases, and **both are gitignored — they stay local and
-are never pushed** (see `.gitignore`), so a fresh clone will not see them. If you need their
-history, read the local copies or `git log -- test/archive/`. `pytest.ini` sets
-`norecursedirs = archive probes eval`, so they are never collected.
+**② `test/eval_quality/` — answer quality + reflection ablation** (2026-11-27, see the dedicated
+section below)
 
-Currently live test files:
+```bash
+PYTHONIOENCODING=utf-8 python test/eval_quality/judge_answer_quality.py --selftest   # judge gate
+PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --recall-check
+PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --repeat 3
+PYTHONIOENCODING=utf-8 python test/eval_quality/reflect_ablation_eval.py --repeat 3
+PYTHONIOENCODING=utf-8 python test/eval_quality/reflect_ablation_eval.py --repeat 3 --improve
+```
 
-- `test/test_agent_timeout.py` — timeout/exception mechanism (11 cases, no Milvus or LLM needed).
-- `test/test_main_routes_covered.py` — AST scan of `api/*.py` + `main.py`, prevents unmounted router dead code (2 cases).
-- `test/test_agent_flow.py` — **L2 Agent flow layer**: runs the real LangGraph graph with a fake LLM (scripted) and a fake retriever. Covers tool success/empty/timeout/error, retrieval-failure ≠ retrieval-empty, LLM crashes, both loop guards, the three timeout timings, and the `ask()` contract (17 cases + a parametrized "no dangling tool_calls" invariant → 26 collected items).
-- `test/test_api_contract.py` — **L3 API contract layer**: `TestClient` + `dependency_overrides`. Field shapes, missing-field 422, model switching, the upload validation logic (path traversal / type whitelist / same-name skip-or-overwrite), and the `RagModel` app-level singleton (12 cases).
-- `test/test_tools.py` — **L2 tool layer**: pure-function checks on the tool bodies. Covers `calculator`'s AST-whitelist evaluation (arithmetic, unsafe-input rejection, malformed input) — the regression net for the `eval()` RCE fix — plus `rag_search`'s exception normalization (26 cases, always run).
-- `test/test_rag_model.py` — **L2 retrieval layer**: the `core/rags/rags.py` failure semantics — "retrieval failed" raises `RetrievalError`, "retrieval empty" returns `[]`, and `/rag` stays resilient (7 cases, always run).
-- `test/test_splitter.py` — pure-function splitter checks (6 cases, always run).
-- `test/test_file_filter.py` — **L2 ingest-dedup layer**: `utils/docs/manager/filter.py`'s MD5 content-hash dedup. Covers first-time processing, same-content skip, different-filename-same-content skip, **re-upload with a newer source mtime still skips** (the old mtime gate defeated dedup on the upload path), changed content re-processes, deleted output re-processes, **the index stores filenames only** (host and container share one index), legacy absolute-path indexes still resolve, and the regression net "upload the same document twice produces exactly one output file, no `_1` copy" (9 cases, always run).
-- `test/test_vector_split.py` — end-to-end `vector_split()`; requires a healthy Milvus and Ollama, and re-embeds every document, so it is slow (measured: 25 min 29 s for 1667 chunks, 2026-11-16 with bge-large; the same pipeline over the current corpus — 17 files / 1517 chunks / bge-m3 — took **14 min 20 s** via `vector_main.py` on 2026-11-25). Marked `@pytest.mark.slow` — excluded from the default fast run.
-- `test/test_eval_smoke.py` — real MiniMax + real Milvus smoke (**marked `slow`**).
-- `test/e2e/test_browser_e2e.py` — Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**).
-- `test/e2e/real_stack_check.py` — **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Runs against the real backend (8000) + real Milvus/Ollama/MiniMax in a **visible Chrome**, sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages, and writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Costs money and needs every real service up. Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 2026-11-17: 19/19 passed in 74 s; re-measured 2026-11-18: 19/19 passed in 64 s.
+### Currently live pytest files
 
-The four-layer system is documented in `docs/status/测试体系.md`; its design is
-`docs/plan/2026-11-16-test-suite-design.md`. As of 2026-11-25 the fast run is
-**99 passed / 0 xfailed** — the three `xfail(strict=True)` markers that used to pin known
-defects (F9a_x / S5 / E4) are gone, because P1-1, P1-2 and P1-7 are fixed; the +9 are
-`test/test_file_filter.py` (MD5 dedup on the ingest path).
+| File | Layer | What it measures |
+|---|---|---|
+| `test/test_agent_timeout.py` | L1 | timeout/exception mechanism (11 cases, no Milvus or LLM needed) |
+| `test/test_main_routes_covered.py` | L1 | AST scan of `api/*.py` + `main.py` — prevents unmounted router dead code (2 cases) |
+| `test/test_agent_flow.py` | L2 | **runs the real LangGraph graph** with a scripted fake LLM + fake retriever: tool success/empty/timeout/error, retrieval-failure ≠ retrieval-empty, LLM crashes, both loop guards, the three timeout timings, the `ask()` contract (17 cases + a parametrized "no dangling tool_calls" invariant → 26 collected items) |
+| `test/test_tools.py` | L2 | tool bodies: `calculator`'s AST-whitelist evaluation (the `eval()` RCE regression net) + `rag_search`'s exception normalization (26 cases) |
+| `test/test_rag_model.py` | L2 | `core/rags/rags.py` failure semantics — "retrieval failed" raises `RetrievalError`, "retrieval empty" returns `[]`, `/rag` stays resilient (7 cases) |
+| `test/test_splitter.py` | L2 | pure-function splitter checks (6 cases) |
+| `test/test_file_filter.py` | L2 | `utils/docs/manager/filter.py` MD5 content-hash dedup: same-content skip, different-filename-same-content skip, **re-upload with a newer source mtime still skips** (the old mtime gate defeated dedup on the upload path), changed content re-processes, **the index stores filenames only** (host and container share one index), legacy absolute-path indexes still resolve, and "upload the same document twice produces exactly one output file, no `_1` copy" (9 cases) |
+| `test/test_api_contract.py` | L3 | `TestClient` + `dependency_overrides`: field shapes, missing-field 422, model switching, upload validation (path traversal / type whitelist / same-name skip-or-overwrite), the `RagModel` app-level singleton (12 cases) |
+| `test/test_eval_smoke.py` | L4 | real MiniMax + real Milvus smoke (**marked `slow`**) |
+| `test/test_vector_split.py` | L4 | end-to-end `vector_split()`; needs healthy Milvus + Ollama and re-embeds everything (**marked `slow`**) |
+| `test/e2e/test_browser_e2e.py` | L4 | Playwright against a **process-external fake backend** + a dedicated Streamlit on port 8511 (**marked `e2e`**) |
+| `test/e2e/real_stack_check.py` | — | **real-stack health check**, deliberately named so pytest never collects it (not `test_*.py`). Sweeps all 9 endpoints (including negative paths: 422, path traversal, `.exe` whitelist, same-name skip, `switch_model` failure + restore) plus the 3 Streamlit pages in a **visible Chrome**; writes screenshots + an HTML report to `test/e2e/_artifacts/` (gitignored). Run: `PYTHONIOENCODING=utf-8 python test/e2e/real_stack_check.py`. Measured 19/19 passed in 74 s (2026-11-17) and 64 s (2026-11-18) |
 
-The browser layer collects **8** cases and reports **8 passed** only when the real backend
-is up on :8000. With the real backend down, `test_e8_real_backend_smoke` is **skipped**
-(it needs a live backend) and the layer reports **7 passed / 1 skipped** (measured
-2026-11-22). That skip is an environment condition, not a failure.
+`test/archive/` and `test/probes/` hold the outdated v1/v2.1 scaffolding and one-off probe scripts.
+Both were superseded by pytest cases and **both are gitignored — never pushed**, so a fresh clone
+will not see them. If you need their history, read the local copies or `git log -- test/archive/`.
+**Do not reference `test/probes/` in code or in pushed docs.**
 
-**The fast suite is not hermetic — its runtime depends on Milvus being reachable** (re-measured
-2026-11-25 on the current 99 cases): **99 passed in 108.70 s with Milvus down** vs
-**7.5–8.9 s with Milvus up** (six consecutive runs: 8.89 / 7.49 / 7.60 / 7.89 / 7.83 / 7.72 s).
-With Milvus down, the cost is not in the tests but in `test/test_api_contract.py`'s 12 setups,
-each ~10–11 s: `main.py`'s lifespan probes Milvus on every startup
-(`MilvusClient.list_collections()`), and an unreachable Milvus blocks that probe for ~10–11 s.
-`TestClient` re-triggers the lifespan per test. Do not read the slow run as "the tests got slower".
+### Measured suite state
 
-With Milvus up, the same 12 lifespans cost ~6.7 s total (~0.55 s each — `OllamaEmbeddings()`
-construction, i.e. httpx client + SSL context, is 0.46 s of that); the other 87 cases take 1.43 s.
+- **Fast run: 99 passed / 13 deselected / 0 xfailed** (2026-11-27; same 99 on 2026-11-25). The three
+  `xfail(strict=True)` markers that used to pin known defects (F9a_x / S5 / E4) are gone — P1-1,
+  P1-2 and P1-7 are fixed; the +9 are `test/test_file_filter.py`.
+- **Browser layer: 8 passed** only when the real backend is up on :8000. With it down,
+  `test_e8_real_backend_smoke` is **skipped** (needs a live backend) and the layer reports
+  **7 passed / 1 skipped** (measured 2026-11-22). That skip is an environment condition, not a failure.
+- **Coverage** (measured 2026-11-22, `pytest -m "not slow and not e2e" --cov=.`): `agent/` **91%**,
+  whole project **56%**. The low end is ingestion (`utils/docs/` 11–20%) and the Streamlit pages
+  (`web_page/` 0% — only exercised by the browser E2E, never by pytest). There is **no threshold
+  assertion and no CI**, so coverage can silently regress.
+- **The fast suite is not hermetic — its runtime depends on Milvus being reachable** (re-measured
+  2026-11-25): **99 passed in 108.70 s with Milvus down** vs **7.5–8.9 s with Milvus up** (six
+  consecutive runs: 8.89 / 7.49 / 7.60 / 7.89 / 7.83 / 7.72 s). The cost is not in the tests but in
+  `test/test_api_contract.py`'s 12 setups, each ~10–11 s: `main.py`'s lifespan probes Milvus on
+  every startup (`MilvusClient.list_collections()`), an unreachable Milvus blocks that probe
+  ~10–11 s, and `TestClient` re-triggers the lifespan per test. With Milvus up, those 12 lifespans
+  cost ~6.7 s total (~0.55 s each — `OllamaEmbeddings()` construction is 0.46 s of that) and the
+  other 87 cases take 1.43 s.
+  > ⚠️ **The Milvus-up number is load-sensitive.** On 2026-11-25, right after an index rebuild plus
+  > a Docker image rebuild (machine under load), the same suite measured **19.3–21.3 s**; it dropped
+  > back to 7.5–8.9 s once the machine settled. Re-measured 2026-11-27 under load: **21.9–22.9 s**.
+  > This is **not** the code change and **not** the model switch — two candidate explanations were
+  > tested and ruled out: ① cold vs warm Ollama model makes no difference (unload bge-m3 first →
+  > 7.83 s; warm → 7.72 s); ② `import main` is not the culprit (`OllamaEmbeddings()` construction:
+  > 0.46 s bare, 0.48 s after importing `main`). **Always qualify the number with "machine load".**
+- **Coverage gap**: the fast suite *does* run `graph.invoke()` — routing branches, counter-reset
+  semantics and reflect decisions have 17 cases in `test/test_agent_flow.py` plus a parametrized
+  "dangling `tool_calls` == 0" net. What is **not** covered: the reflect prompt's hard constraint
+  ("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
+  it. See `docs/status/测试体系.md` §6.
 
-> ⚠️ **The Milvus-up number is load-sensitive.** On 2026-11-25, right after an index rebuild plus a
-> Docker image rebuild (machine under load), the same suite measured **19.3–21.3 s**; once the
-> machine settled it dropped back to 7.5–8.9 s. The per-lifespan fixed cost floated between
-> ~1.6 s and ~0.55 s. This is **not** caused by the code change or the model switch — two
-> candidate explanations were tested and ruled out: ① **cold vs warm Ollama model makes no
-> difference** (unload bge-m3 first → 7.83 s; warm → 7.72 s); ② **`import main` is not the
-> culprit** (`OllamaEmbeddings()` construction: 0.46 s bare, 0.48 s after importing `main`).
-
-**Code coverage** (measured 2026-11-22, `pytest -m "not slow and not e2e" --cov=.`): `agent/`
-**91%**, whole project **56%**. The low end is ingestion (`utils/docs/` 11–20%) and the Streamlit
-pages (`web_page/` 0% — they are only exercised by the browser E2E, never by pytest).
-
-**Coverage gap to keep in mind**: the fast suite now *does* run `graph.invoke()` — the Agent's
-non-timeout routing branches, counter-reset semantics, and reflect decisions have 17 pytest
-cases in `test/test_agent_flow.py`, plus a parametrized regression net asserting
-"dangling `tool_calls` == 0". What is **not** covered: the reflect prompt's hard constraint
-("never answer `re_iterate` after a tool timeout/error") — a scripted fake reflect cannot exercise
-it, and the only real-LLM probe (S4) is inherently flaky. See `docs/status/测试体系.md` §6.
-
-`test/probes/` holds manual verification scripts (`probe_*.py`) for the `tool_calls` dangling /
-`tool_status` overwrite findings. Both findings are now covered by pytest cases
-(`test/test_agent_flow.py` F1b + the parametrized "no dangling tool_calls" invariant), so the
-directory is **gitignored and never pushed** — it exists only in the local working copy. Do not
-reference `test/probes/` in code or in pushed docs; if you need the historical scripts, read
-`git log -- test/probes/`.
-
-`test/README.md` is the per-file index: what each script tests, its measured result, and what
-the suite does *not* cover. Read it before adding or running anything under `test/`.
-
-There is no configured lint or build command. `pytest.ini` discovers `test/test_*.py`; not every script under `test/` is a pytest test.
+`test/README.md` is the per-file index: what each script tests, its measured result, and what the
+suite does *not* cover. Read it before adding or running anything under `test/`.
 
 ## Runtime Architecture
 
 ### Frontend and API layer
 
-`main_web.py` provides three Streamlit pages:
-
-1. Agent smart Q&A, backed by `/agent/chat`.
-2. Direct knowledge-base Q&A, backed by `/rag`.
-3. Repository administration for document upload.
+`main_web.py` provides three Streamlit pages: Agent smart Q&A (backed by `/agent/chat`), direct
+knowledge-base Q&A (`/rag`), and repository administration for document upload.
 
 `main.py` creates the FastAPI application and mounts:
 
@@ -212,8 +215,8 @@ The direct paths use the application-level `ModelManager` initialized in `main.p
 FastAPI's `Depends` cache is **per request only** — it never spans requests. So a cheap
 dependency (`get_chat_model`) may be built per request, but `get_rag_model` is an **app-level
 singleton** on `app.state.rag_model`: `RagModel.__init__` costs ~0.45 s (measured 2026-11-17 —
-**~0.42 s of it is building the embedding HTTP client**, i.e. two httpx clients each building
-an SSL context; plus YAML reads and two health-check RPCs), while the actual retrieval only
+**~0.42 s of it is building the embedding HTTP client**, i.e. two httpx clients each building an
+SSL context; plus YAML reads and two health-check RPCs), while the actual retrieval only
 takes ~0.10 s. A failed connection is **not cached**, so the next request retries.
 See `api/dependencies.py`.
 
@@ -225,12 +228,13 @@ The Agent path is intentionally decoupled from `app.state.model_manager`:
 
 - `api/api_agent.py` calls `agent.runtime.ask()`.
 - `agent.runtime` lazily compiles and reuses the LangGraph graph.
-- Both the Agent node and reflection node explicitly create `MiniMax-M3.1-Flash` rather than using the YAML default model.
+- All three LLM nodes (`iter` / `synth` / `reflect`) explicitly create `MiniMax-M3.1-Flash` rather than using the YAML default model.
 - `session_id` is passed as a LangGraph `thread_id`, but the graph has no checkpointer. Agent multi-turn persistence is therefore not implemented.
 
 ## LangGraph Agent (v2.2)
 
-The Agent is a single-Agent, multi-tool ReAct-style graph with an LLM-as-judge reflection step. v2.2 replaced v2.1 to fix three bugs: the dual-role node, mixed-up counters, and the tool-timeout deadlock.
+Single-Agent, multi-tool, ReAct-style graph with an LLM-as-judge reflection step. v2.2 replaced
+v2.1 to fix three bugs: the dual-role node, mixed-up counters, and the tool-timeout deadlock.
 
 ```text
 START → iter
@@ -361,10 +365,10 @@ FastAPI 对普通 `def` 端点会自动丢到线程池。
 
 ```python
 class AgentState(TypedDict, total=False):
-    messages: Annotated[list, add_messages]
-    iter_count: Annotated[int, _inc_iter]
-    reflection_count: Annotated[int, _inc_refl]
-    tool_status: Annotated[dict, _merge_tool_status]   # key=调用 id, value={tool,status,code,retryable}
+    messages: Annotated[list, add_messages]           # reducer 1
+    iter_count: Annotated[int, _inc_iter]             # reducer 2
+    reflection_count: Annotated[int, _inc_refl]        # reducer 3
+    tool_status: Annotated[dict, _merge_tool_status]  # reducer 4 — key=调用 id
     last_critique: str
     next_action: str      # reflect 的决策：end / rewrite / re_iterate
     deadline: float       # 图级总时限（绝对时间戳）
@@ -372,7 +376,7 @@ class AgentState(TypedDict, total=False):
     last_answer: str      # synth 最近一次写出的答案（超时兜底时交出去）
 ```
 
-字段必须显式声明，否则 LangGraph 不会把它写进 state（`next_action` 曾经因此恒为缺省值）。
+9 个字段，**4 个 reducer**。字段必须显式声明，否则 LangGraph 不会把它写进 state（`next_action` 曾经因此恒为缺省值）。**未声明 reducer 的字段默认是覆盖（LastValue），不是累加** —— 这是 LangGraph 最容易踩的默认值。
 `last_answer` 不能靠"倒着找最后一条 AIMessage"推导 —— messages 里混着 iter 的占位消息（`"READY"`），
 会把占位消息当成答案交出去。
 
@@ -380,8 +384,9 @@ class AgentState(TypedDict, total=False):
 
 `agent.runtime.ask()` debug 模式返回 5 字段：`answer` / `iter_count` / `reflection_count` / `tool_called` / `last_action`。`api/api_agent.py` 仍调 `ask()` 非 debug 模式。
 
-`runtime.py` 显式给 LangGraph `recursion_limit`（从 `MAX_ITER` / `MAX_REFL` 推导，不写死），
-否则最坏情况 28 步会撞默认上限 25，抛 `GraphRecursionError`。
+`runtime.py` 显式给 LangGraph `recursion_limit`，**从常量推导、不写死**（`runtime.py:24-25`）：
+`_STEPS_PER_ROUND = 2*MAX_ITER + 2` = 8，`RECURSION_LIMIT = 8 * (MAX_REFL+1) + 10` = **42**。
+最坏情况 8 步/轮 × 4 轮 = **32 步 > 默认上限 25** → 不推导就会撞 `GraphRecursionError`，被 `ask()` 的 except 吞成"agent 调用异常"。
 
 ### 错误和调试
 
@@ -398,18 +403,79 @@ class AgentState(TypedDict, total=False):
   区分不出限流/服务不可用（可重试）与参数错/代码 bug（不可重试）。前置已具备
   （`RetrievalError` 保留 `__cause__`），还需要 `RetrievalError` 带更细的错误码。
 
-> 已修复（2026-11-17）：`empty` 状态不精确 —— `core/rags/rags.py` 现在抛 `RetrievalError`
-> 表示"检索失败"，`[]` 只表示"检索为空"；`rag_tool.py` 把它翻译成
-> `AgentToolError` / `AgentTimeoutError`。
-> 详见 `docs/status/项目现状.md` P2-7。
->
-> 已修复（2026-11-17）：Ollama 调用不限时 —— `EmbeddingModel._init_client` 把
-> `PLATFORMS.ollama.timeout`（60 s）透传给 `OllamaEmbeddings(client_kwargs={"timeout": ...})`
-> → `ollama.Client` → httpx。工具外层的 `Timer` 仍是"不再等"，底层连接现在自己也有上限。
+## Answer-quality evaluation (线 A / 线 B)
 
-> 已修复（2026-11-15，O-006）：`tool_calls` 悬空 —— `iter_node` 的边界检查改成
-> `iter_count + 1 >= MAX_ITER`，最后一轮不再调 LLM，从根上不产生悬空消息。
-> 实测悬空数从 2/7 降到 0/5。详见 `docs/status/项目优化.md` O-006。
+`test/eval_quality/` — **两条只读的评测线，不改生产代码**。线 A 直接调生产 `build_graph()`
+（`ask()` 只返回 5 个字段，拿不到工具调用与召回片段）；线 B 直接调生产
+`reflect_node(state, llm=…)`（`reflect_ablation_eval.py:117` `build_state` / `:154` `run_case`）。
+改的是"喂什么进去"，不是"生产逻辑"。
+
+**线 A** — 端到端答案质量，12 题 × 3 遍 = 36 个答案。口径：`hit_rate`（`must_contain`
+必答命题，权重 0.6）/ `halluc`（命中 `must_not_contain` 负例 → **该题封顶 0.5**，权重 0.3）/
+`retrieval_hit`（权重 0.1）；`depth_rate`（`should_contain`）**不进总分**，单独报。
+总分 = **A/B 组 8 题**的 `score` 均值；C/D 组不进总分。
+
+**线 B** — 反思消融，48 格 × 3 遍 = 144 次判定。48 格 = 4 题 × 6 种答案（good×2 / 矛盾 /
+缺项 / 答非所问 / 编造）× 2 种素材（标准 / 无关）。`classify()`（`:195`）**先看
+`action == "re_iterate"`** —— 生产 prompt 里 `re_iterate` 的语义是"素材不够、要再查"
+（`agent/prompts/reflect_prompt.py:53`），不是"答案错"，于是 24 格无关素材全部落进
+"素材充分性"轴，**三个指标的分母都只用标准素材**。
+
+### Measured (2026-11-27)
+
+| | 值 | 稳不稳 |
+|---|---|---|
+| 线 A 总分 | **0.9333**（0.9125 / 0.9625 / 0.9250，极差 0.05） | ⚠️ 不稳 |
+| 线 A `hit_rate` | 0.9305（67/72，极差 0.1667） | ⚠️ 不稳 |
+| 线 A `depth_rate`（不进总分） | 0.8333（15/18，极差 0） | ✅ 稳 |
+| 线 A 幻觉 / 检索命中 | 1 例（B03）/ 0.8333 | — |
+| 线 B 真阳性率 | **100%（36/36，极差 0）** | ✅ **可当稳定结论** |
+| 线 B 假阳性率 | **33.3%（8/24，极差 12.5 pp）** —— 8/8 全是「引用」规则，不是忠实性误报 | ✅ 稳（**要主动说**） |
+| 线 B 不可判定率 | 0%（0/12） | ✅ 稳 |
+| 线 B 改后改善（真·坏答案） | **+0.5139**（11/12 变好，幻觉修好 3 例） | ⚠️ 单次采样 |
+| 线 B 改后**误伤**（好答案被误改） | **−0.1667** | ⚠️ 单次采样 |
+| 线 B 改后**净值** | **+0.2895**（19 格） | ⚠️ **净值掩盖结构，两条要分开报** |
+| 闭卷对照 | 8 题 0.1667 vs 带检索 0.9444（**8/8 全更低**） | 题库未被"先验可猜"污染 |
+
+⚠️ **线 A 的 0.9333 会高估** —— `depth_rate` 和 C/D 组都不进总分；且线 A 的波动来自**真实
+检索端**（Agent 每次改写查询 → 召回不同），**多跑几遍不会收敛，不能当稳定基线**。
+线 B 的四个指标可以当稳定结论 —— 两次独立的 3 遍跑**逐格判定向量 48/48 完全相同**，
+但 critique 措辞 144/144 都不同（证明是独立采样，不是缓存）。
+
+### Rules for this evaluation system
+
+1. **快照永不覆盖** —— 同名文件自动加 `-2` / `-3` 后缀。每份快照带 `corpus_sha256` /
+   `git_commit` / `rubric_version` / `executor_model` / `judge_model` / `cases_hash`。
+   快照**入库跟踪**（`test/eval/data/` 与 `test/eval_quality/results/` 同口径）——
+   数字可以被第三方从原始 JSON 复算。
+2. **`corpus_sha256` 是"这份数字量的是哪份语料"的标签，不是"语料不许变"** —— hash 相同 =
+   数字可直接比；hash 不同 = **两份数字不可直接比**。换语料要重建索引
+   （`python -m utils.txt_spliter.vector_main`，当前语料 14 个文件，嵌入模型 0 token，
+   约 14 分钟）→ 重跑并另存快照。
+   ⚠️ **本仓库有个具体耦合**：`documents/` 里躺着 `docs/status/*.md` 的副本（A/B 组 8 道题
+   问的就是项目自己的实现细节）→ **改完 status 文档再重建索引 = 换了语料** → 线 A 要重跑。
+3. **判分器与执行体跨模型隔离** —— 判分器 **MiniMax-M2.5**、执行体 **MiniMax-M3.1-Flash**，
+   避免"自己给自己打分"。
+4. **判分器不能用 `with_structured_output`** —— M2.5 会先吐 `<think>…</think>` 再吐 JSON，而
+   `ThinkingStripRunnable`（`agent/llm_wrapper.py:103`）剥 think 剥得太晚（Pydantic 解析发生在
+   `ChatOpenAI` 内部）→ 必然 `ValidationError`。判分器走**普通 `.invoke()` → `strip_thinking()`
+   → 自己抽 JSON**（`judge_answer_quality.py:120`）。
+5. **判分器故障 ≠ 答案错** —— 判分器异常时该题记 `judge_error`，**不计分母、不记 0**。
+6. **嵌入模型 0 token** —— 索引 / 向量化不花钱，只有生成与判分花 LLM token。
+7. **正则口径的"假阳性"要单独查** —— C01 的 `fabricate_regex` 曾把「需进一步查看
+   `redis://` 等配置」误判为编造（v4 已收紧成"必须像真地址"）。收紧后 C01 变成 2/3 通过，
+   剩下那 1 次是**真失败**。
+
+### What these evaluations found (2026-11-27)
+
+量出了四个此前未知的缺陷，全部登记在 `docs/status/项目现状.md` §8（**只登记未修**）：
+
+| 缺陷 | 症状 | 复现性 |
+|---|---|---|
+| **P1-11** synth 的 LLM 超时无降级路径，兜底文案把内部异常类名交给用户（`agent/nodes/synth_node.py:81` → 「综合答案生成失败：APITimeoutError」） | 该题 `must_hit` 0/4，单题拉低总分 0.08；耗时 96.5 s vs 33/37 s；工具侧 4 次调用全 `success` → 根因是 `timeout.llm: 30` 对长上下文综合不够 | **偶发**（36 次里 1 次） |
+| **P2-10** Agent 改写查询时丢掉否定语义 | B02 问「**为什么不能**直接返回空列表」，改写后"不能"丢了 → `retrieval_hit` 3/3 遍恒 0；而**直接** `rag.retrieve(query)` 的召回准入 10/10 全过 | **稳定 3/3**，重跑不会变好 |
+| **P2-9** 占位工具的「占位：」标记在综合阶段被剥掉 | C02 三遍里两遍把占位天气当真实天气报出去 → **众数 = 失败** | **3 遍里 2 遍失败** |
+| **P2-11** reflect 的「引用」规则太严 | 假阳性 33.3%，8/8 的 critique 都明说"内容与素材一致"、只嫌没标引用 → 好答案被误改平均 −0.17 | **稳定 8/24** |
 
 ## RAG and Vector Storage
 
@@ -476,12 +542,13 @@ answer-quality divergence, not a crash. Verify with
 - The embedding model name comes from `EmbeddingModel._resolve_model_name()` only (`EMBEDDING_MODEL` env var > YAML). Never hardcode the model name (currently `bge-m3`) — a silent mismatch with the indexing side returns noise, not an error.
 - Do not build a second `OllamaEmbeddings` in `core/rags/rags.py`; reuse `EmbeddingModel.embedding` so the timeout and the model name stay in one place.
 - Always construct `MilvusClient` with `uri=f"http://{host}:{port}"`. pymilvus 2.6 has no `host`/`port` parameters — those keys fall into `**kwargs` and are **silently ignored**, so the client connects to the default `http://localhost:19530`. That happens to work on the host and always fails inside a container.
-- `requirements.txt` is a **fully pinned lock file** (139 packages, closure resolved with linux markers). Pinning only direct dependencies lets transitive deps drift to newer versions and break the container at import time. To change a dependency: edit the "直接依赖" section, then re-resolve the closure — do not hand-edit the locked section.
+- `requirements.txt` is a **fully pinned lock file** (140 packages, closure resolved with linux markers). Pinning only direct dependencies lets transitive deps drift to newer versions and break the container at import time. To change a dependency: edit the "直接依赖" section, then re-resolve the closure — do not hand-edit the locked section.
 - `get_rag_model` (`api/dependencies.py`) is an **app-level singleton** on `app.state.rag_model`. FastAPI's `Depends` cache does not span requests, so building a `RagModel` per request costs a new Milvus gRPC connection every time.
 - Treat Agent `session_id` as non-persistent until a LangGraph checkpointer is added.
 - `api/api_file.py` is mounted under `/api`, so its effective upload endpoints are `/api/upload-and-parse` and `/api/batch-upload-and-parse`.
 - When adding or removing API modules, update or satisfy `test/test_main_routes_covered.py`; it exists to prevent unmounted `api_*.py` dead code.
-- When changing `agent/` behavior, add or update a case in `test/test_agent_flow.py` (graph / flow) or `test/test_agent_timeout.py` (timeout / exception mechanism); when changing a tool's body, add or update a case in `test/test_tools.py`. The scripts under `test/archive/` are dead scaffolding and are not pushed to the repo; the live offline evaluation lives in `test/eval/run_agent_eval.py`.
+- When changing `agent/` behavior, add or update a case in `test/test_agent_flow.py` (graph / flow) or `test/test_agent_timeout.py` (timeout / exception mechanism); when changing a tool's body, add or update a case in `test/test_tools.py`. The scripts under `test/archive/` are dead scaffolding and are not pushed to the repo; the two live offline evaluations are `test/eval/run_agent_eval.py` (routing) and `test/eval_quality/` (answer quality + reflection ablation).
 - The Agent's internal placeholder messages are defined once in `agent/constants.py` (`SIGNAL_READY` / `SIGNAL_MAX_ITER` / `SIGNAL_EXPIRED`, grouped as `INTERNAL_SIGNALS`). Producers and consumers must reference the constants, never the string literals — a copied literal drifts and turns the "the answer is not a placeholder" assertion into a tautology.
 - `calculator` must never use `eval()`. It evaluates a hand-rolled AST whitelist (`agent/tools/calculator_tool.py`); keep `test/test_tools.py` green if you touch it.
 - The frontend reads `API_BASE_URL` (default `http://localhost:8000`) — all three `web_page/*.py` files. Do not hardcode a backend address again; the previous mix of `localhost:8000` and `api:8000` broke container deployments.
+- **Do not re-run the answer-quality evaluations just to "refresh" a number.** Snapshots are the record; re-running produces a different number that means nothing and costs money. Only re-run when the rubric, the corpus, or the production behavior changed — and then save a **new** snapshot.

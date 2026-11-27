@@ -253,9 +253,9 @@ PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --clo
     4 题全部撞 429「已达到 Token Plan 用量上限」→ 判分失败。
     **判分器故障按第 8 条处理**（不计分母），**补跑**用
     `--only B01,B02,B03,B04`（快照不覆盖，另存 `-2`）。
-11. **`results/` 还没进 `.gitignore`**：当前是 **untracked**（`git status` 显示
-    `?? test/eval_quality/results/`）。按约定 **`.gitignore` 与根 `CLAUDE.md` 这两个
-    全项目性文件等项目完工后统一核实** —— **在此之前不要 `git add` 这个目录**。
+11. **`results/` 入库跟踪**：全部快照都进仓库（与 `test/eval/data/` 的快照同一口径）——
+    **数字可以被第三方从原始 JSON 复算**，本 README 与 `docs/status/测试现状.md` 里
+    点名的快照文件名都是活链。快照**永不覆盖**（同名自动加 `-2`/`-3`）。
 12. **语料 hash 是"这份数字是在哪份语料上量的"，不是"语料不许变"**：
     **知识库本来就会随文档更新而更新** —— 换语料就重建索引
     （`python -m utils.txt_spliter.vector_main`，当前语料约 14 分钟），

@@ -1,0 +1,1322 @@
+{
+  "meta": {
+    "created_at": "2026-11-27T09:11:51",
+    "date": "2026-11-27",
+    "corpus_sha256": "eae9bb07f6815d0d5691bebe02ad6bf3b85bc16cc221a17d972032fb9e134a50",
+    "git_commit": "10d5f9083b8fe7a48ad175fb4e091a287b17ab77",
+    "rubric_version": "v3-2026-11-27",
+    "executor_model": "MiniMax-M3.1-Flash",
+    "judge_model": "MiniMax-M2.5",
+    "cases_hash": "f78160b5cbc59f6ec3b528a3602a62302f4155b7dc6d1a53e25b98ee623729b6",
+    "repeat": 1
+  },
+  "summary": {
+    "total_score": 0.925,
+    "scored_questions": 8,
+    "total_questions": 8,
+    "hit_rate": 0.9167,
+    "must_hits": 22,
+    "must_total": 24,
+    "depth_rate": 0.5,
+    "depth_hits": 3,
+    "depth_total": 6,
+    "halluc_cases": [],
+    "halluc_count": 0,
+    "retrieval_hit_rate": 0.75,
+    "honesty_pass": {
+      "C01": false
+    },
+    "placeholder_marker_retention": {
+      "C02": false
+    },
+    "weather_tool_called": {
+      "C02": null
+    },
+    "tool_answer_correct": {
+      "D01": true,
+      "D02": true
+    },
+    "tool_detail": {
+      "D01": {
+        "number_ok": null,
+        "tool_ok": null,
+        "extracted_numbers": null,
+        "last_number": null
+      },
+      "D02": {
+        "number_ok": null,
+        "tool_ok": null,
+        "extracted_numbers": null,
+        "last_number": null
+      }
+    }
+  },
+  "details": [
+    {
+      "id": "A01",
+      "type": "fact",
+      "group": "A",
+      "query": "本项目的文档切块参数是什么？切块最大多少字符、重叠多少？用的嵌入模型向量维度是多少？",
+      "answer": "本项目文档切块及嵌入参数如下：\n\n| 配置项 | 参数 |\n|---|---|\n| 切块方式 | `RecursiveCharacterTextSplitter` |\n| 最大切块长度 | **300 字符**（`chunk_size=300`） |\n| 重叠长度 | **30 字符**（`overlap=30`） |\n| 嵌入模型 | **bge-m3**（通过 `langchain_ollama.OllamaEmbeddings` 调用） |\n| 向量维度 | **1024 维** |\n\n补充：2026-11-27 语料重建时的实测快照为 **2170 个切块**，实际块数可能随语料重建小幅变化，应以 Milvus 的 `count(*)` 为准。\n\n引用：\n- 【1】`utils/txt_spliter/spliter.py`、`utils/txt_spliter/vector_main.py:131`：切块组件及 `chunk_size=300 / overlap=30`。\n- 【2】`utils/models/embedding_model.py`、`EmbeddingModel`：`bge-m3` 嵌入模型及 1024 维向量。",
+      "retrieved_chunks": [
+        "组件 | 用在哪 | 干什么\n-- | --- | ---\nlangchain_ollama.OllamaEmbeddings | utils/models/embedding_model.py | 查询时把 query 向量化（构造只此一处；core/rags/rags.py 直接复用 EmbeddingModel.embedding，不再自己 new）\nlangchain_core.text_splitter.RecursiveCharacterTextSplitter | utils/txt_spliter/spliter.py | 按分隔符递归切分",
+        "切块数 | 2170 块（chunk_size 300 / overlap 30）—— 2026-11-27 语料重建时的实测快照；⚠️ 这一行本身也在语料里，所以每次重建会有 ±几块漂移，实时值以 Milvus count(*) 为准 | Milvus count(*)\n向量维度 | 1024（bge-m3） | EmbeddingModel\n索引副本数 | 2 个集合（在线 txt_data_1795713372 + 回滚窗口 txt_data_1795589457；2026-11-27 重建后手动删掉 1 个孤儿集合，代码层面仍不自动清） | list_collections()",
+        "segment（数据段）/ insert 异步落盘 | Milvus / \"Segment\" / \"Insert\" | utils/txt_spliter/vector_main.py:131（client.insert） | 集合底层的分块；insert 完不一定立刻查得到 | 切 alias 之后的一小段时间内检索结果偏旧甚至为空（实测项目已知缺口 P3-10）",
+        "四、实测\n项 | 数字\n- | --\n去重回归用例 | 9 条全过（含\"重传不产生 _1.txt 副本\"、\"旧索引格式仍能解析\"）\ntxt/ 清理 | 33 → 17 个文件（删 15 个同内容副本 + 1 个未清洗的旧产物；法典 5 部全部保留）\n索引块数 | 1667 → 1517 块（-150 = -9.0%，正好是重复 chunk 数）\n嵌入模型切换 | 两端向量逐位相同（索引端直连 /api/embed vs 检索端 langchain_ollama，max abs diff = 0.0）",
+        "# | 问题 | 症状\n- | -- | --\n1 | 嵌入模型选型错了 | bge-large 是 BGE 的英文模型，而本项目语料 ~75% 是中文 → 检索几乎没有中文区分度。实测「学习计划的四个阶段」的正确块被法典块挤出 top-5；「民法典诉讼时效期间」返回的全是民法典别的条文\n2 | 文档去重形同虚设（P1-10） | txt/ 33 个文件里 16 个是同内容副本 → 索引里全是重复 chunk"
+      ],
+      "tools_called": [
+        "rag_search"
+      ],
+      "tool_status": {
+        "chatcmpl-tool-822d9330b3114d96": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 4,
+      "anchor_total": 4,
+      "anchor_detail": [
+        {
+          "name": "chunk_size=300",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "overlap=30",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "bge-m3",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "维度1024",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确最大切块300字符",
+        "明确重叠长度为30",
+        "明确模型及1024维"
+      ],
+      "must_hit_count": 3,
+      "must_total": 3,
+      "should_hits": [
+        false
+      ],
+      "should_hit_count": 0,
+      "should_total": 1,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": 0,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": 0.0,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need output JSON only. Need assess must all hit. should deep proposition: answer says sources embedding_model.py EmbeddingModel but not _resolve_model_name or env priority. So not hit. Negative no capacity claim. Reasons <=15 Chinese chars.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确最大切块300字符\"},{\"index\":2,\"hit\":true,\"reason\":\"明确重叠长度为30\"},{\"index\":3,\"hit\":true,\"reason\":\"明确模型及1024维\"}],\"should\":[{\"index\":1,\"hit\":false,\"reason\":\"未说明环境变量优先\"}],\"negative\":[]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 14.7,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "A02",
+      "type": "fact",
+      "group": "A",
+      "query": "Agent 图的 recursion_limit 是多少？这个值是写死的吗？",
+      "answer": "Agent 图当前的 **`recursion_limit` 是 42**。\n\n它**不是直接写死的数值**，而是根据循环预算推导出来的：\n\n```python\n_STEPS_PER_ROUND = 2 * MAX_ITER + 2\nRECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10\n```\n\n当前 `MAX_ITER`、`MAX_REFL` 对应：\n\n```text\n8 × (3 + 1) + 10 = 42\n```\n\n该值在调用图时显式传入：\n\n```python\nconfig={\"recursion_limit\": RECURSION_LIMIT}\n```\n\n引用：`agent/runtime.py:24-25`、`agent/runtime.py:91`。\n\n如果不显式传入，LangGraph 默认上限是 **25**，而当前最坏情况下需要 **32** 步，会触发 `GraphRecursionError`，最终被 `ask()` 兜底显示为“agent 调用异常”。因此现在采用的是**动态推导值**；以后修改 `MAX_ITER` 或 `MAX_REFL` 时，上限会自动随之调整，无需再手动改数字。",
+      "retrieved_chunks": [
+        "• recursion_limit必须显式给：最坏情况 = 每轮2*MAX_ITER + 2步 ×(MAX_REFL + 1)轮 =8 × 4 = 32步 > LangGraph 默认 25 → 撞GraphRecursionError→ask()兜底成\"agent 调用异常\"而不是给出答案。所以RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10 = 42（agent/runtime.py:24-25）。",
+        "recursion_limit（递归步数上限） | config={\"recursion_limit\": N} | agent/runtime.py:25（算出 42）、:91（传入） | LangGraph 的兜底上限，超过就抛 GraphRecursionError | 不显式传就用默认 25，而最坏情况是 32 步（8 步/轮 × 4 轮）→ 撞上限 → 用户看到的是\"agent 调用异常\"而不是一个答案",
+        "recursion_limit（递归步数上限） | LangGraph 兜底上限，超了抛 GraphRecursionError | agent/runtime.py:91 | RECURSION_LIMIT = 8×4+10 = 42（按 MAX_ITER/MAX_REFL 推导，不写死）\nbind_tools（绑定工具） | 把工具说明交给 LLM，让它能发起函数调用 | agent/nodes/iter_node.py:40 | 只有 iter 节点挂；synth/reflect 不挂",
+        "二、新发现：图会撞 LangGraph 的 recursion_limit（真 bug，已修）",
+        "2.5 超时机制（3 层，configs/agent_config.yaml）\n\n配置：timeout.{llm:30, tool:30, total:90}，由 agent/constants.py 加载并 assert 校验。\n\n2.6 循环预算（agent/runtime.py:25-26）\n\n最坏情况 32 步（8×4）会撞 LangGraph 默认上限 25 → GraphRecursionError。\n显式推导而不是写死，以后改常量不会再撞。\n\n2.7 素材来源（agent/nodes/material.py）",
+        "8.6 graph.invoke 的 recursion_limit 是推导出来的，不是写死的\n\n改 MAX_ITER / MAX_REFL 不用手改上限。这一点做得对，别改回写死。\n\n8.7 FastAPI 端点必须是普通 def\n\nask() 是同步阻塞的（要等 LLM 30s + 工具 30s）。写在 async def 里会占住事件循环，\n整个 FastAPI 服务（包括 /chat、/rag、文件上传）全部卡死。\nFastAPI 对普通 def 端点会自动丢到线程池。这是 v2.2 修过的 bug，别改回去。",
+        "值从常量推导出来而不是写死：\npython\n   _STEPS_PER_ROUND = 2 * MAX_ITER + 2\n   RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10   # = 42\n这样以后调 MAX_ITER / MAX_REFL 也不会再撞默认上限。\n修后实测：同样的问题 → 7 步结束（iter tools iter tools iter synth reflect），不再爆。",
+        "• recursion_limit必须显式给：最坏情况 = 每轮2*MAX_ITER + 2步 ×(MAX_REFL + 1)轮 =8 × 4 = 32步 > LangGraph 默认 25 → 撞GraphRecursionError→ask()兜底成\"agent 调用异常\"而不是给出答案。所以RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10 = 42（agent/runtime.py:24-25）。",
+        "recursion_limit（递归步数上限） | LangGraph 兜底上限，超了抛 GraphRecursionError | agent/runtime.py:91 | RECURSION_LIMIT = 8×4+10 = 42（按 MAX_ITER/MAX_REFL 推导，不写死）\nbind_tools（绑定工具） | 把工具说明交给 LLM，让它能发起函数调用 | agent/nodes/iter_node.py:40 | 只有 iter 节点挂；synth/reflect 不挂",
+        "• reflection_count—— reflect 节点调用次数，上限MAX_REFL=3，永不重置（绝对上限，防死循环）。\n  • 不用它会怎样（v2.1 的教训）：v2.1 只有一个iterations计数器，混着\"决策次数\"和\"综合次数\" → 反思触发条件被短路 → 反思机制经常根本不触发。v2.2 拆成两个才修好。\n  • ⚠️ 关键点：MAX_REFL不是工具循环的刹车。工具循环（iter → tools → iter）根本不经过 reflect 节点 → 工具循环唯一的刹车是MAX_ITER。改路由时两个都要保留。"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_01a21a8a94667258b3a10f2e": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8a94667258b3a10f2f": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 4,
+      "anchor_total": 4,
+      "anchor_detail": [
+        {
+          "name": "=42",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "推导非写死",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "GraphRecursionError",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "最坏32步",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确写出上限为42",
+        "说明由两个参数动态推导"
+      ],
+      "must_hit_count": 2,
+      "must_total": 2,
+      "should_hits": [
+        true
+      ],
+      "should_hit_count": 1,
+      "should_total": 1,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": 1,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": 1.0,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need output exact JSON. Need judge. Must1 yes says 42. Must2 yes dynamic based on MAX. Deep should yes says worst 32 default 25 error. Negative: Did answer express 32 actual limit? No, explicitly distinguishes worst steps and limit 42. So negative hit false. Reasons <=15 Chinese chars. Ensure should array objects.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确写出上限为42\"},{\"index\":2,\"hit\":true,\"reason\":\"说明由两个参数动态推导\"}],\"should\":[{\"index\":1,\"hit\":true,\"reason\":\"明确说明32步触发超限\"}],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"明确区分步数与上限\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 14.2,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "A03",
+      "type": "fact",
+      "group": "A",
+      "query": "LLM 单次调用超时多少秒？工具超时多少秒？整图总时限多少秒？",
+      "answer": "按当前最终配置：\n\n| 超时层级 | 时限 |\n|---|---:|\n| LLM 单次调用 | **30 秒** |\n| 单次工具调用 | **30 秒** |\n| 整张图/整次 Agent 请求 | **90 秒** |\n\n配置来源为 `configs/agent_config.yaml`：`llm=30 / tool=30 / total=90`，并由 `agent/constants.py` 加载校验；工具调用通过 `Timer(TOOL_TIMEOUT)` 限制，整图通过 `TOTAL_TIMEOUT` 和 `state[\"deadline\"]` 控制。【1】【2】【3】\n\n补充：素材中记录过旧实现下 LLM 构造器实际采用 `model_config.yaml` 的 **60 秒**，且 `.with_config({\"timeout\": ...})` 不生效；后续改动已改为 `create_minimax(..., timeout=LLM_TIMEOUT)`，因此修复后应使用 **30 秒**。【4】",
+      "retrieved_chunks": [
+        "3.4 超时（3 层，职责不重叠）\n\n配置在 configs/agent_config.yaml：llm=30 / tool=30 / total=90。\n改超时只改 YAML。\n\n3.5 工具状态（4 态，key 是调用 id）",
+        "层 | 实测结果\n- | ----\n工具节点 | LangGraph 官方 ToolNode 零超时包装（源码 grep timeout = 0 命中）。工具 sleep(6) → 图实际等 6.0s\nLLM 节点 | 构造时有效超时 = 60s（来自 configs/model_config.yaml），不是代码里写的 30s\n.with_config({\"timeout\": N}) | 改成 5 再测，仍是 60s → 死代码（langchain_core 全包从不读 RunnableConfig[\"timeout\"]）",
+        "Cancellation（可取消） | 超时后能真正中止底层工作，而不是「不再等」 | ⚠️ 半有（线程杀不掉）\nDeadline Propagation（时限传递） | 把总时限往下传，下游知道「我最多还能花多久」 | ✅ 有（state[\"deadline\"]）\nBudget（预算） | token 预算 / 调用次数预算，超了就停 | ❌（我们只有次数和时间预算）\nFallback（降级） | 主路径挂了走备用路径（比如检索失败就裸问 LLM） | ⚠️ 部分（synth 有兜底）",
+        "recursion_limit（递归步数上限） | LangGraph 兜底上限，超了抛 GraphRecursionError | agent/runtime.py:91 | RECURSION_LIMIT = 8×4+10 = 42（按 MAX_ITER/MAX_REFL 推导，不写死）\nbind_tools（绑定工具） | 把工具说明交给 LLM，让它能发起函数调用 | agent/nodes/iter_node.py:40 | 只有 iter 节点挂；synth/reflect 不挂",
+        "节点 | 文件 | 输入 | 输出 | 关键行为\n-- | -- | -- | -- | ----\niter | nodes/iter_node.py:44 | question + 素材 + 计数 | tool_calls 或 READY | 挂了 bind_tools(ALL_TOOLS)；iter_count + 1 >= MAX_ITER 时不调 LLM 直接返回上限信号 ★",
+        "agent/constants.py | 导出 LLM_TIMEOUT / TOOL_TIMEOUT / TOTAL_TIMEOUT + assert 校验\nagent/state.py | 5 字段 → 9 字段：加 next_action / deadline / expired / last_answer\nagent/tools/rag_tool.py | 检索套 Timer(TOOL_TIMEOUT)；底层异常翻译成 AgentToolError",
+        "• 作用：给任意同步调用套一个时间上限。\n  • 落在哪：agent/timeout.py:22（类）、:36（call）\n  • 本项目怎么用：Timer(TOOL_TIMEOUT).call(model.retrieve, query, top_k=5)。用ThreadPoolExecutor提交任务 +fut.result(timeout=...)。\n  • 不用它会怎样：工具层没有上限 → 一次 Milvus 挂起 →整条请求挂死（外层ask()的总时限也救不了，因为节点根本返回不了）。\n  • ⚠️ 三个坑（agent/timeout.py里都写了注释）：",
+        "|timeout| 工具抛AgentTimeoutError|TOOL_TIMEOUT| ✅ |\n  |error| 工具抛AgentToolError或其他异常 |TOOL_ERROR| ❌ |\n  写入形式：{\"tool_call_id\": {\"tool\":..., \"status\":..., \"code\":..., \"retryable\":...}}。\n  • 不用它会怎样：没有状态字典→ 工具失败在 messages 里只是一段文字（甚至什么都没有）→ reflect 节点无法区分\"检索到了但内容没覆盖\"和\"检索挂了\" → 反思决策靠猜。",
+        "2 >= MAX_ITER(3) 为 False → 不触发边界分支 → 照样调 LLM → 照样发 tool_calls。\n然后 should_continue 拿到 iter_count=3 才拦截。拦截点晚了一步。\n修法：把边界判断改成 iter_count + 1 >= MAX_ITER（即「再调这一次就是最后一次，也不该发工具」），\n或者更稳的做法 —— 在 iter 节点里即使 LLM 发了 tool_calls，也要主动清掉：\n② 让 should_continue 先判 tool_calls",
+        "agent/nodes/status_tool_wrapper.py | 异常分支改认自家异常类（AgentTimeoutError → timeout，AgentError → error）\nagent/nodes/iter_node.py | 删 .with_config({\"timeout\": 30}) → 改 create_minimax(..., timeout=LLM_TIMEOUT)；加 is_expired 检查\nagent/nodes/synth_node.py | 同上；加 is_expired 检查（在 _get_llm() 之前，避免白加载一次 LLM）",
+        "3.4 超时（3 层，职责不重叠）\n\n配置在 configs/agent_config.yaml：llm=30 / tool=30 / total=90。\n改超时只改 YAML。\n\n3.5 工具状态（4 态，key 是调用 id）",
+        "三、实际改动清单\n文件 | 改动\n-- | --\nagent/errors.py | 新增：异常归一化层（AgentError / AgentTimeoutError / AgentToolError / is_timeout()）\nagent/timeout.py | 新增：Timer（单次动作超时）+ is_expired()（图级 deadline 检查）\nconfigs/agent_config.yaml | 新增 timeout 段（llm: 30 / tool: 30 / total: 90）",
+        "agent/runtime.py | _extract_answer 跳过全部 INTERNAL_SIGNALS；ask() 兜底成「回答超时：思考时间超过总时限」\ntest/test_tools.py | 新增 —— 22 条：算术 8 + 危险输入 10 + 畸形输入 4（参数化）\ntest/test_splitter.py | 摘掉 S5 的 xfail；新增 S6（默认参数真的来自 YAML）\ntest/test_agent_flow.py | 摘掉 F9a_x 的 xfail",
+        "utils/models/model_setting.py:107（默认参数）、\nagent/nodes/iter_node.py:37、agent/nodes/synth_node.py:31、\nagent/nodes/reflect_node.py:48、agent/tools/rag_tool.py:31。\n（iter / synth / reflect 三处额外传 timeout=LLM_TIMEOUT；rag_tool 与 main.py 走默认值。）",
+        "agent/nodes/status_tool_wrapper.py | 异常分支改认自家异常类（AgentTimeoutError → timeout，AgentError → error）\nagent/nodes/iter_node.py | 删 .with_config({\"timeout\": 30}) → 改 create_minimax(..., timeout=LLM_TIMEOUT)；加 is_expired 检查\nagent/nodes/synth_node.py | 同上；加 is_expired 检查（在 _get_llm() 之前，避免白加载一次 LLM）",
+        "utils/models/model_setting.py:107（默认参数）、\nagent/nodes/iter_node.py:37、agent/nodes/synth_node.py:31、\nagent/nodes/reflect_node.py:48、agent/tools/rag_tool.py:31。\n（iter / synth / reflect 三处额外传 timeout=LLM_TIMEOUT；rag_tool 与 main.py 走默认值。）",
+        "agent/constants.py | 导出 LLM_TIMEOUT / TOOL_TIMEOUT / TOTAL_TIMEOUT + assert 校验\nagent/state.py | 5 字段 → 9 字段：加 next_action / deadline / expired / last_answer\nagent/tools/rag_tool.py | 检索套 Timer(TOOL_TIMEOUT)；底层异常翻译成 AgentToolError",
+        "2.6 L2 · 工具纯函数（26 条，永远跑）\n\ntest/test_tools.py —— 测 calculator 的求值逻辑（绕开 LangChain 的参数解析，直接调工具本体）\n+ rag_search 的异常归一化。\nP1-2 的回归护栏：calculator 原来写的是 str(eval(expression))，\n直接执行 LLM 传来的字符串 → RCE。",
+        "节点 | 文件 | 输入 | 输出 | 关键行为\n-- | -- | -- | -- | ----\niter | nodes/iter_node.py:44 | question + 素材 + 计数 | tool_calls 或 READY | 挂了 bind_tools(ALL_TOOLS)；iter_count + 1 >= MAX_ITER 时不调 LLM 直接返回上限信号 ★",
+        "• 作用：两个上限值，来自 YAML（configs/agent_config.yaml），不是硬编码。\n  • 落在哪：agent/constants.py:16-17（加载并导出）、:28-29（启动时 assert 校验）\n  • 本项目怎么用：iter.max_per_cycle: 3/reflect.max_absolute: 3。启动时assert MAX_ITER >= 2—— 因为MAX_ITER = 1时 iter 第一次进来就命中边界 → 永远不调 LLM → 永远不调工具 →Agent 退化成\"不带检索的纯闲聊\"。"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_01a21a8ad353750b8bb13fd5": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8ad353750b8bb13fd6": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_cf494daadf6a4637af0b967c": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_3660ea2a88954486a5e12f46": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 3,
+      "anchor_total": 3,
+      "anchor_detail": [
+        {
+          "name": "llm=30",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "tool=30",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "total=90",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确写明30秒",
+        "明确写明30秒",
+        "明确写明90秒"
+      ],
+      "must_hit_count": 3,
+      "must_total": 3,
+      "should_hits": [],
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": null,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": null,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确写明30秒\"},{\"index\":2,\"hit\":true,\"reason\":\"明确写明30秒\"},{\"index\":3,\"hit\":true,\"reason\":\"明确写明90秒\"}],\"should\":[],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"未称整图时限30秒\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 18.0,
+      "iter_count": 3,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "A04",
+      "type": "fact",
+      "group": "A",
+      "query": "本项目重建向量索引后，线上是怎么切到新集合的？为什么重建不用改代码、不用重启服务？",
+      "answer": "## 线上如何切到新集合\n\n项目采用的是 **Milvus Alias（别名）原子切换**：\n\n1. **创建新物理集合**  \n   每次重建都会创建带时间戳的真实集合，例如 `txt_data_1795589457`，而不是直接修改线上旧集合。  \n   位置：`utils/txt_spliter/vector_main.py:110`\n\n2. **向新集合灌数据并建索引**  \n   流程是：解析文件 → 切块 → 调用 Ollama 生成向量 → `insert` 数据 → 创建索引 → 加载集合。\n\n3. **最后切换别名**  \n   固定的别名 `txt_data` 原来指向旧集合，准备好后通过 `alter_alias()` 将它原子地改指向新集合；首次没有别名时则调用 `create_alias()`。  \n   位置：`utils/txt_spliter/vector_main.py:146,156,161`\n\n   切换前：\n\n   ```text\n   txt_data → txt_data_1795586629\n   ```\n\n   切换后：\n\n   ```text\n   txt_data → txt_data_1795589457\n   ```\n\n旧集合不会立即删除，因此新版本出现问题时，还可以把 alias 切回旧集合，实现快速回滚。\n\n## 为什么不用改代码、不用重启服务\n\n因为**摄取侧和检索侧使用的都是稳定的逻辑名称 `txt_data`，而不是带时间戳的真实集合名**：\n\n- 别名名称来自配置中的 `collection_name`，默认值为 `txt_data`：  \n  `utils/txt_spliter/vector_main.py:92`\n- 检索侧始终按该 alias 查询：  \n  `core/rags/rags.py`\n- 重建时只改变 Milvus 服务端的 alias 指向，应用程序访问的 collection 名称始终没变。\n\n因此：\n\n- 不需要修改代码或配置中的集合名；\n- 不需要同步发布或重启检索服务；\n- Alias 由 Milvus 在服务端解析，切换后后续请求自然访问新集合；\n- 切换前旧集合持续提供查询，切换过程无需停服。\n\n## 当前实现的一个注意点\n\n`insert()` 是异步落盘的，而当前流程在切 alias 前**没有显式执行 `flush()`**。因此虽然切换本身是原子的，但切换后的极短时间内，新集合可能出现尚未对查询可见、返回 0 行或数据不完整的情况。\n\n最小修法是在 `alter_alias()` 前增加：\n\n```python\nclient.flush(collection_name)\n```\n\n更稳妥的顺序是：\n\n```text\ninsert → flush → create_index → load_collection\n→ 验证新集合可查询 → alter_alias\n```\n\n所以准确地说，当前方案实现了**无需改代码、无需重启的原子别名切换**，但“切换成功”与“新数据已经全部可查询”之间还需要通过 flush 和切换前校验来保证。  \n引用：`utils/txt_spliter/vector_main.py:146,156,161`。",
+      "retrieved_chunks": [
+        "alias（别名） | Milvus / \"Alias\" | utils/txt_spliter/vector_main.py:92（alias 名）、:149（探测）、:156（alter_alias 切换）、:161（create_alias 首次创建） | 一个稳定名字，指向某个真实集合；查询只认 alias | 重建索引就要改代码里的集合名，或者先删后建 → 没有回滚窗口。切 alias 后旧集合还在（txt_data_1795586629），这是刻意的：出问题可以把 alias 切回去",
+        "3.9  原子切换 alias\n• 作用：新集合建好之后，让稳定的 alias指向它，旧集合保留 —— 重建索引期间查询不中断、不报错、不返回旧数据。\n  • 落在哪：utils/txt_spliter/vector_main.py:146（\"原子切换 alias\" 注释）、:156（alter_alias）、:161（create_alias，首次没有 alias 时走这条）\n  • 本项目怎么用（完整序列）：① 解析文件 → 切块\n  ② 调 Ollama /api/embed 批量算向量\n  ③ 建新集合 txt_data_<时间戳>（3 字段 schema）\n  ④ insert 数据",
+        "原子切换 alias | 新集合建好后让 alias 指向它，旧集合不删 | utils/txt_spliter/vector_main.py:146,156,161 | alter_alias() / create_alias()\nRetrievalError | 检索失败（严格区别于\"检索为空\"） | core/rags/rags.py:11 | 由 rag_tool.py 翻译成 AgentTimeoutError / AgentToolError",
+        "别名原子切换是本项目工程做得最好的一处：先建新集合 → 灌数据 → 建索引 → 最后切别名，\n任何一步失败旧别名还指向老集合，服务不中断。\n⚠️ 但切别名的瞬间，新集合的数据可能还没对 query 可见（2026-11-16 实测）。\nMilvus 的 insert() 是异步落盘的 —— 返回只代表 WAL 收下，segment 还没 flush。\n所以 insert → create_index → load_collection → alter_alias 走完的那一刻，\nquery() 可能返回 0 行（1667 行时命中；3 行的对照实验里延迟为 0，窗口大小跟数据量有关）。",
+        "aliases  : {'aliases': ['txt_data'], 'db_name': 'default'}\n    txt_data_1795586629 -> aliases: {'aliases': [], ...}            # 旧集合：alias 已切走\n    txt_data_1795589457 -> aliases: {'aliases': ['txt_data'], ...}  # 新集合：alias 指向它",
+        "3.9  原子切换 alias\n• 作用：新集合建好之后，让稳定的 alias指向它，旧集合保留 —— 重建索引期间查询不中断、不报错、不返回旧数据。\n  • 落在哪：utils/txt_spliter/vector_main.py:146（\"原子切换 alias\" 注释）、:156（alter_alias）、:161（create_alias，首次没有 alias 时走这条）\n  • 本项目怎么用（完整序列）：① 解析文件 → 切块\n  ② 调 Ollama /api/embed 批量算向量\n  ③ 建新集合 txt_data_<时间戳>（3 字段 schema）\n  ④ insert 数据",
+        "alias（别名） | Milvus / \"Alias\" | utils/txt_spliter/vector_main.py:92（alias 名）、:149（探测）、:156（alter_alias 切换）、:161（create_alias 首次创建） | 一个稳定名字，指向某个真实集合；查询只认 alias | 重建索引就要改代码里的集合名，或者先删后建 → 没有回滚窗口。切 alias 后旧集合还在（txt_data_1795586629），这是刻意的：出问题可以把 alias 切回去",
+        "切 alias 期间可用性 | 旧索引全程在线，alias 在最后一步原子切换 → 零停机（但那 19 分钟内用户拿到的是旧答案）\n容器侧 | 未重启、未重建镜像即自动生效 —— Milvus alias 服务端每次请求解析",
+        "别名原子切换是本项目工程做得最好的一处：先建新集合 → 灌数据 → 建索引 → 最后切别名，\n任何一步失败旧别名还指向老集合，服务不中断。\n⚠️ 但切别名的瞬间，新集合的数据可能还没对 query 可见（2026-11-16 实测）。\nMilvus 的 insert() 是异步落盘的 —— 返回只代表 WAL 收下，segment 还没 flush。\n所以 insert → create_index → load_collection → alter_alias 走完的那一刻，\nquery() 可能返回 0 行（1667 行时命中；3 行的对照实验里延迟为 0，窗口大小跟数据量有关）。",
+        "• 代码位置：utils/txt_spliter/vector_main.py:146（\"原子切换 alias\" 注释）、:156（alter_alias）、:161（create_alias，首次没有 alias 时走这条）\n  • ⚠️ 已知缺口 P3-10：切 alias之前没有flush→ 切完的一小段时间里新集合有部分数据查不到。最小修法：在切 alias 前加一次client.flush(collection_name)。",
+        "• 不用它会怎样：如果检索侧直接写死真实集合名txt_data_<时间戳>→ 每次重建索引都要改代码 + 改配置 + 同步重启检索服务 → 重建索引 = 停机。用 alias 则重建时只改 alias 指向，代码一行不动。\n  • 自测：alias 和\"配置里的collection_name\"是同一个东西吗？为什么说\"alias 是本项目摄取侧唯一有设计含量的地方\"？",
+        "alias（别名） | Milvus / \"Alias\" | utils/txt_spliter/vector_main.py:92（alias 名）、:149（探测）、:156（alter_alias 切换）、:161（create_alias 首次创建） | 一个稳定名字，指向某个真实集合；查询只认 alias | 重建索引就要改代码里的集合名，或者先删后建 → 没有回滚窗口。切 alias 后旧集合还在（txt_data_1795586629），这是刻意的：出问题可以把 alias 切回去",
+        "2.2  alias（别名）\n• 作用：一个稳定的名字，指向某个真实集合。查询只认 alias，不认真实集合名。\n  • 落在哪：utils/txt_spliter/vector_main.py:92（取名）、:156/:161（切换）；检索侧core/rags/rags.py（按 alias 查）\n  • 本项目怎么用：alias 名固定来自configs/model_config.yaml的collection_name（默认txt_data）。摄取侧和检索侧都只认这个名字，真实集合名谁都不关心。",
+        "aliases  : {'aliases': ['txt_data'], 'db_name': 'default'}\n    txt_data_1795586629 -> aliases: {'aliases': [], ...}            # 旧集合：alias 已切走\n    txt_data_1795589457 -> aliases: {'aliases': ['txt_data'], ...}  # 新集合：alias 指向它",
+        "栏 2 · Milvus\n术语 | 一句话作用 | 位置 | 本项目怎么用\n-- | ----- | -- | ------\ncollection（集合） | 向量数据表 | utils/txt_spliter/vector_main.py:110 | 真实名 txt_data_<时间戳>，每次重建都新建一个\nalias（别名） | 一个稳定名字，指向某个真实 collection；查询只认 alias | utils/txt_spliter/vector_main.py:92,156,161 | alias 名固定为配置里的 collection_name（默认 txt_data）"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_b159095b4b5e43578cc50791": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_77fd27567875448ba6b2711f": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "chatcmpl-tool-a2fd87857c28caba": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 4,
+      "anchor_total": 4,
+      "anchor_detail": [
+        {
+          "name": "集合名带时间戳",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "alias改指",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "原子切换",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "不改代码/零停机",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确新建时间戳集合并保留旧集",
+        "明确用alter_alias原子切换",
+        "检索始终使用稳定别名，无需重启"
+      ],
+      "must_hit_count": 3,
+      "must_total": 3,
+      "should_hits": [
+        false,
+        true
+      ],
+      "should_hit_count": 1,
+      "should_total": 2,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": 1,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": 0.5,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need judge. Must 1 yes. 2 yes. 3 says immediately? It says subsequent requests naturally new collection, but caveat visibility. Proposition \"立刻读新数据\". Semantically says alias switch then requests new collection, yes perhaps \"后续请求自然访问新集合\"; caveat short incomplete doesn't negate route. Deep 1 says atomic but doesn't explicitly explain single pointer update vs delete/create. It says \"原子地改指向\", \"Milvus internal pointer update\" near end? Exact: \"Alias 由 Milvus 在服务端解析\"; final \"原子别名切换\". Earlier \"通过 alter_alias() 将它原子地改指向\". Does that express accurate meaning? Deep asks meaning: internal single pointer update, not delete/create. \"原子地改指向\" probably not enough to contrast. Need judge expression. It doesn't say delete/create nor explicitly single pointer update. likely miss. Deep 2 yes old retained and rollback. Negative says requires config/restart? Answer explicitly says not need. So negative is about answer expressing erroneous claim; no. Output negative perhaps hit false reason \"明确表示无需重启\". Need include every list item? Must yes reasons. should indices. negative item with hit false. JSON Chinese.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确新建时间戳集合并保留旧集\"},{\"index\":2,\"hit\":true,\"reason\":\"明确用alter_alias原子切换\"},{\"index\":3,\"hit\":true,\"reason\":\"检索始终使用稳定别名，无需重启\"}],\"should\":[{\"index\":1,\"hit\":false,\"reason\":\"未说明是服务端单次指针更新\"},{\"index\":2,\"hit\":true,\"reason\":\"说明旧集合保留用于快速回滚\"}],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"明确表示无需改配置或重启\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 31.2,
+      "iter_count": 3,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "B01",
+      "type": "mechanism",
+      "group": "B",
+      "query": "RAGMI 的 Agent 有三层超时，分别负责什么？为什么「超时就杀掉线程」这个做法在本项目行不通？",
+      "answer": "## 三层超时分别负责什么\n\n严格来说，第 1 层不是“计时器”，而是超时的**异常语义层**；三层职责不重叠：\n\n| 层级 | 实现位置 | 负责什么 | 不负责什么 |\n|---|---|---|---|\n| **第 1 层：异常归一化** | `agent/errors.py`、工具函数 | 将第三方异常统一为 `AgentTimeoutError`（可重试）或 `AgentToolError`（不可重试） | 不判断是否超时，也不计算时限 |\n| **第 2 层：单次动作超时** | `agent/timeout.py::Timer` | 限制一次工具调用最多等待多久；超时后向调用方抛出 `AgentTimeoutError`。LLM 调用则在模型构造时设置 timeout | 不限制整张 Agent 图的总运行时间 |\n| **第 3 层：图级总时限** | `state[\"deadline\"]`、`is_expired(state)` | 限制整张图最多运行多久；每个节点开始工作前检查 deadline，超时便停止后续处理 | 不会强行中断正在执行的动作 |\n\n当前配置为：`llm=30s`、`tool=30s`、`total=90s`。图级超时采用“协作式检查”：`iter`、`synth`、`reflect` 等节点动手前先调用 `is_expired()`，而不是依赖一个外部线程去强杀整张图。  \n引用：`agent/errors.py`（§3.11）、`agent/timeout.py`（§3.12）、`is_expired()`（§3.14）、`configs/agent_config.yaml`。\n\n三层不能互相替代：\n\n- 只有总时限：工具线程超时后仍可能继续占用 Milvus/Ollama 连接。\n- 只有单次时限：多个节点依次等待，仍可能把总耗时成倍放大。\n- 异常归一化则保证上层能稳定区分“应该重试的超时”和“不可重试的工具失败”。\n\n## 为什么“超时就杀掉线程”在本项目行不通\n\n### 1. Python 无法安全地强杀线程\n\nPython 线程没有类似 `Thread.terminate()` 的机制：\n\n- `Future.cancel()` 只能取消尚未开始的任务；\n- 对已经运行中的线程，调用方只能“不再等待”，不能强制终止；\n- 正在访问 Milvus、Ollama 或其他 I/O 的线程仍会运行到自行结束。\n\n因此，工具超时后，底层线程可能还会继续几秒到几十秒，并短暂占用一个连接。这不是彻底中断，只是**超时兜底**。  \n引用：`agent/timeout.py` 关键代码说明（§3.12）。\n\n### 2. 使用 `with ThreadPoolExecutor(...)` 反而会让超时失效\n\n`ThreadPoolExecutor` 的上下文管理器退出时会执行：\n\n```python\nshutdown(wait=True)\n```\n\n它会等待所有已提交任务结束。即使外层已经判定工具超时，只要仍在 `with` 块中退出，就会继续等工具线程跑完，表面上抛出的超时也就失去了实际意义。\n\n项目采用的是：\n\n```python\nex = ThreadPoolExecutor(...)\ntry:\n    ...\nfinally:\n    ex.shutdown(wait=False)\n```\n\n这里 `wait=False` 的含义只是“主调用方不再等待”，**不是杀掉工作线程**。\n\n### 3. 图级也不能靠外层线程强杀\n\n如果把整个 `graph.invoke()` 放进一个外部线程再超时，图仍可能在后台完整运行，形成残留的“僵尸图”。所以项目把图级超时做成节点入口处的 deadline 检查，让各节点协作式收摊。\n\n工具级则接受“线程最终自行结束、短暂占连接”的现实取舍；同时让 Milvus、Ollama 客户端自身也设置超时，缩短底层线程的尾部占用。对个人知识库或面试作品，这个成本可以接受。\n\n如果将来必须做到**立即终止**，就需要改用独立进程，通过 `multiprocessing` 的 `terminate()`/`kill()` 杀掉子进程；但这会引入进程间序列化、参数与返回值传递等额外开销，也更适合真正需要强隔离的外部服务。\n\n引用：`agent/timeout.py`（Timer 与 `shutdown(wait=False)`）、§3.12 工具级/图级僵尸线程说明。",
+      "retrieved_chunks": [
+        "3.11  AgentError / AgentTimeoutError / AgentToolError",
+        "「超时 → AgentTimeoutError（可重试）」和「其他 → AgentToolError（不可重试）」。",
+        "先验 [概念需补] §3.11 AgentError / AgentTimeoutError / AgentToolError · §3.12 Timer · §3.13 deadline · §3.14 is_expired() —— 三个异常类名和两个超时词先对齐，这节就不绕。\n本项目特有选择：切三层不是为了\"多一层更保险\"，而是职责不重叠：归一化管\"错误叫什么\"、第 2 层管\"这一次等多久\"、第 3 层管\"整张图还能跑多久\"。别的方案（只留总时限 / 只留单次超时）都有明确死角 —— 只留总时限，工具线程会把连接占着不放；只留单次超时，10 个节点各等 30 s 也能跑 5 分钟。",
+        "RAGMI 是一个分层清晰、Agent 侧已工程化、RAG 侧有毛刺、评估侧口径待重建的个人知识库项目：\n  • Agent 侧（v2.2）已经站住了—— 4 节点图、2 个计数器、3 层超时、结构化工具状态，/agent/chat稳定返回 200，死循环和工具超时这两个 v2.1 硬伤都实测修掉了。\n  • RAG 侧的两端已经对齐—— 嵌入模型名只有一个来源（EMBEDDING_MODEL> YAML），\n  检索失败与检索为空可区分（P1-9 / P2-7）。剩下的毛刺是检索结果只返文本、\n  丢来源和分数。",
+        "├─ AgentTimeoutError   超时 —— 可重试\n       └─ AgentToolError      工具失败 —— 不可重试归一化只发生一次，就在工具里（agent/tools/rag_tool.py）。上层只认这两个。\n  • 不用它会怎样：上层节点要开始判断\"这个异常到底是不是超时\" → 每个节点各写一遍 → 第三方异常类型漏判 → 超时被当成普通错误 →该重试的不重试；而且每加一个第三方库就要改 N 个节点。",
+        "agent/timeout.py 里的关键代码：\nwith ThreadPoolExecutor(...) 在退出时会等所有任务跑完（shutdown(wait=True)），\n那样超时形同虚设。所以必须 shutdown(wait=False) —— 但这只是「不等了」，不是「杀掉了」。\n真实影响：一次工具超时后，那个线程会在几秒~几十秒后自己结束，短暂占着一个连接。\n对个人项目 / 面试作品 完全可接受。要彻底解决需要：\n- 换进程（multiprocessing，可 kill，但序列化开销大）",
+        "1.Python 杀不掉线程（没有Thread.terminate()）。超时只是\"不再等\"——底层线程仍在跑，仍占着 Milvus / Ollama 连接。这是\"超时兜底\"，不是\"强制中断\"。\n  2.不能用with ThreadPoolExecutor(...)——with退出会等线程跑完，超时也就失去意义了。所以是ex = ThreadPoolExecutor(...)+finally: ex.shutdown(wait=False)（:54明确注释了）。\n  3.非超时异常原样上抛（:48-52）——Timer不负责翻译，翻译归errors.py管。",
+        "3.12  Timer（单次动作超时）",
+        "层 | 有没有僵尸线程 | 说明\n- | ------- | --\n图级（外层包 graph.invoke） | ✅ 解决了 —— 我们没有用外层包裹 | 原来那种写法会留下一条后台线程继续跑完整张图；现在改成每个节点自己查 deadline，图会正常结束，没有后台残留\n工具级（Timer 里那个线程） | ⚠️ 没解决 | Python 没有 Thread.terminate()。Timer 超时后只是「不再等」，底层那个线程还在跑，还会跑完，还会占着 Milvus 连接",
+        "1. .with_config({\"timeout\": N})是死代码——langchain_core从不读RunnableConfig[\"timeout\"]。超时只能在构造时传：LLMmodel.create_minimax(\"MiniMax-M3.1-Flash\", timeout=LLM_TIMEOUT)。三个 LLM 节点都走这条路。\n  2. Python 杀不掉线程——Timer只能\"不再等\"，底层线程仍会跑完并占着连接。所以工具层自身也要有界（Milvus / Ollama 客户端各自也有 timeout）。",
+        "先验 [概念需补] §3.11 AgentError / AgentTimeoutError / AgentToolError · §3.12 Timer · §3.13 deadline · §3.14 is_expired() —— 三个异常类名和两个超时词先对齐，这节就不绕。\n本项目特有选择：切三层不是为了\"多一层更保险\"，而是职责不重叠：归一化管\"错误叫什么\"、第 2 层管\"这一次等多久\"、第 3 层管\"整张图还能跑多久\"。别的方案（只留总时限 / 只留单次超时）都有明确死角 —— 只留总时限，工具线程会把连接占着不放；只留单次超时，10 个节点各等 30 s 也能跑 5 分钟。",
+        "层 | 位置 | 管什么 | 不管什么\n- | -- | --- | ----\n第 1 层 异常归一化 | agent/errors.py + 工具函数 | 第三方异常 → AgentTimeoutError / AgentToolError | 不管时间\n第 2 层 单次动作超时 | agent/timeout.py :: Timer | \"这一次调用最多等 N 秒\" | 不管全局预算\n第 3 层 图级总时限 | state[\"deadline\"] + is_expired() | \"整张图最多跑 N 秒\" | 不管单次调用",
+        "层 | 位置 | 检查时机 | 谁在守\n- | -- | ---- | ---\n第 2 层 单次动作超时 | agent/timeout.py::Timer | 工具正在跑的时候 | Timer 在外面等，超了就抛 AgentTimeoutError\n第 3 层 全局总时限 | state[\"deadline\"] + is_expired(state) | 每个节点动手之前 | 节点自己看一眼，超了直接收摊\n\n「协作式」这个词的意思是：没有中央执法者去 kill 谁，而是每个参与者自己在动手前看一眼表。\n\n4.2 这跟「熔断」是两回事",
+        "3.12  Timer（单次动作超时）",
+        "3.4 超时（3 层，职责不重叠）\n\n配置在 configs/agent_config.yaml：llm=30 / tool=30 / total=90。\n改超时只改 YAML。\n\n3.5 工具状态（4 态，key 是调用 id）",
+        "3.14  is_expired()（节点进图前问一句）\n• 作用：协作式检查 —— 每个节点动手之前先问\"超没超总时限\"，超了就地收手。\n  • 落在哪：agent/timeout.py:57（定义）\n  • is_expired(state)直接调用 3 处（三个 LLM 节点动手前）：agent/nodes/iter_node.py:57、agent/nodes/synth_node.py:47、agent/nodes/reflect_node.py:77",
+        "三、实际改动清单\n文件 | 改动\n-- | --\nagent/errors.py | 新增：异常归一化层（AgentError / AgentTimeoutError / AgentToolError / is_timeout()）\nagent/timeout.py | 新增：Timer（单次动作超时）+ is_expired()（图级 deadline 检查）\nconfigs/agent_config.yaml | 新增 timeout 段（llm: 30 / tool: 30 / total: 90）",
+        "is_expired() | 节点进图前问一句\"超没超总时限\" | agent/timeout.py:57 | 3 个节点直接调用（iter/synth/reflect）；2 个条件边改查标志位 state[\"expired\"]\nThinkingStripRunnable / strip_thinking | 剥掉推理模型吐出的 <think> 块 | agent/llm_wrapper.py:29,67 | 包装在最内层，所有派生都受益",
+        "test/test_agent_timeout.py | 新增：11 个用例（工具 4 状态 / Timer / deadline / 超时兜底 / expired 路由 / FastAPI 端点守护）\nCLAUDE.md | 重新生成：计数器 3→2、状态 schema 5→9 字段、工具节点换成官方钩子、新增「超时机制」章节、新增「已知遗留」章节",
+        "6 | test/test_agent_timeout.py | 超时与异常机制 | ✅ 11 条全过。工具 4 态各一条（success/empty/timeout/error）；Timer 把慢调用转成 AgentTimeoutError；Timer 不篡改正常结果；is_expired 用绝对 deadline；超时交出 state[\"last_answer\"] 而不是倒着找 AIMessage（会拿到 \"READY\" 占位）；首次就超时→明确说超时；expired=True 时两条条件边都走 __end__；AST 检查 /agent/chat 不是 async def"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_01a21a8ba6cc72ee87f21bac": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8ba6cc72ee87f21bad": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_TUuwr9fkInEW8UUkr7twCSie": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_uE4uxR2YVUpiiJOG8rU5DBkE": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 4,
+      "anchor_total": 4,
+      "anchor_detail": [
+        {
+          "name": "异常归一化",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "单次动作",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "deadline",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "杀不掉线程",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确说明异常归一化",
+        "说明Timer限制单次调用",
+        "说明整图期限协作检查",
+        "说明线程不可强杀且需自设限"
+      ],
+      "must_hit_count": 4,
+      "must_total": 4,
+      "should_hits": [],
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": null,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": null,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need output exact JSON. Assess. 1 yes. 2 yes Timer single tool call, perhaps \"包住\" semantic yes. 3 yes. 4 yes includes cannot terminate, no wait, clients timeout upper limits. Negative: does it affirm force termination? No, explicitly says cannot. Need negative list probably index 1 hit false reason. Reasons &lt;=15 Chinese chars.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确说明异常归一化\"},{\"index\":2,\"hit\":true,\"reason\":\"说明Timer限制单次调用\"},{\"index\":3,\"hit\":true,\"reason\":\"说明整图期限协作检查\"},{\"index\":4,\"hit\":true,\"reason\":\"说明线程不可强杀且需自设限\"}],\"should\":[],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"明确否认能强制终止线程\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 62.4,
+      "iter_count": 3,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "B02",
+      "type": "mechanism",
+      "group": "B",
+      "query": "RAGMI 的 retrieve() 在检索失败时怎么处理？为什么不直接返回空列表？不这么做会造成什么后果？",
+      "answer": "RAGMI 的 `retrieve()` 明确区分两种情况：\n\n| 场景 | `retrieve()` 行为 | 工具层结果 |\n|---|---|---|\n| 检索正常完成，但没有匹配内容 | 返回 `[]` | 转为空字符串，状态为 `empty / EMPTY_RESULT` |\n| Milvus 未连接、查询失败、Embedding 报错等检索异常 | 抛出 `RetrievalError`，并通过 `__cause__` 保留原始异常 | 底层为超时则转为 `AgentTimeoutError`，可重试；其他错误转为 `AgentToolError` |\n\n依据：`core/rags/rags.py:145-147` 的 `RetrievalError` 抛出逻辑，以及 `agent/tools/rag_tool.py` 的异常归一化处理。\n\n### 为什么不直接返回空列表？\n\n因为二者的业务语义不同：\n\n- `[]` 表示：**检索过程成功执行，只是确实没有相关内容**。\n- `RetrievalError` 表示：**检索没有成功完成，因此无法判断库里是否有相关内容**。\n\n如果检索失败也返回 `[]`，会造成以下问题：\n\n1. **故障被伪装成正常空结果**  \n   工具层会将状态记为 `empty`，而不是 `error` 或 `timeout`。\n\n2. **临时故障无法触发重试**  \n   超时原本会被转换为 `AgentTimeoutError`，标记为 `retryable=true`；吞掉异常后，重试机会也会丢失。\n\n3. **日志和排查方向被误导**  \n   “Milvus 服务不可用”和“知识库正常但没有匹配文档”在日志中完全一样，运维难以判断究竟应该排查基础设施还是检索内容。\n\n4. **原始异常被隐藏**  \n   根因、堆栈以及 `__cause__` 可能无法传递到上层，导致错误难以定位。\n\n5. **可能生成缺乏依据的回答**  \n   下游会把故障当成“没有相关资料”继续生成答案；在 `/rag` 直连链路中，系统虽然仍保持 HTTP 200，但上下文会退化为“没有找到相关文档片段”，容易产生无依据回答。\n\n因此，项目已将原先的 `except Exception: return []` 改为抛出 `RetrievalError`；回归测试也明确验证了“向量库未连接、查询异常、Embedding 异常会抛错，而真正检索到 0 条才返回 `[]`”。  \n依据：`core/rags/rags.py`、`agent/tools/rag_tool.py`、`test/test_rag_model.py` 中“检索失败 ≠ 检索为空”的 P2-7 回归护栏。",
+      "retrieved_chunks": [
+        "3 | test/test_rag_model.py | 「检索失败」≠「检索为空」（P2-7 的回归护栏） | ✅ 7 条全过。向量库没连上→抛 RetrievalError；查询报错→抛异常且保留 __cause__；embedding 报错→也抛；检索到 0 条→返回 [] 不抛；正常路径返回文本；/rag 链路检索失败仍返 200；上下文退化为\"没有找到相关文档片段\"",
+        "3.10  RetrievalError（检索失败 ≠ 检索为空）\n• 作用：把\"检索失败\"（Milvus 连不上、查询报错）和\"检索为空\"（正常查了但没匹配到）严格区分开。\n  • 落在哪：core/rags/rags.py:11（定义）、:145-147（抛出点）\n  • 本项目怎么用：retrieve()抛RetrievalError表示失败，返回[]只表示\"确实没检索到\"。工具层agent/tools/rag_tool.py把它翻译成AgentTimeoutError（__cause__是超时类）或AgentToolError。",
+        "# | 改动 | 文件\n- | -- | --\n1 | 检索失败抛 RetrievalError，检索为空才返回 [] | core/rags/rags.py\n2 | 工具层翻译：__cause__ 是超时 → AgentTimeoutError（可重试），否则 → AgentToolError | agent/tools/rag_tool.py\n3 | /rag 直连链路吞异常保持 200（失败按\"无相关文档\"处理） | core/rags/rags.py::chat",
+        "rag_search 检索为空时返回空字符串（v2.2 改的）—— 原来塞中文兜底串，\n会让 status 永远判成 success，\"检索为空\"这个信号就丢了。\nrag_search 的 docstring 就是 Function Calling 的描述，LLM 全靠它决定\"什么时候该查知识库\"，\n这是领域耦合度最高的一行代码（详见 docs/note/项目领域耦合.md）。",
+        "③ 成功但无内容 | →综合→反思→决策… | 同样先回决策节点；且 rag_search 永不返回空（rag_tool.py:52 有中文兜底串），empty 状态对它触发不了 | ❌ 路径不符",
+        "检索异常归一化（4 条） | RetrievalError → AgentToolError；RetrievalError（底层是超时）→ AgentTimeoutError；第三方异常 → AgentToolError；检索为空 → 返回空串（不是异常）",
+        "3.10  RetrievalError（检索失败 ≠ 检索为空）\n• 作用：把\"检索失败\"（Milvus 连不上、查询报错）和\"检索为空\"（正常查了但没匹配到）严格区分开。\n  • 落在哪：core/rags/rags.py:11（定义）、:145-147（抛出点）\n  • 本项目怎么用：retrieve()抛RetrievalError表示失败，返回[]只表示\"确实没检索到\"。工具层agent/tools/rag_tool.py把它翻译成AgentTimeoutError（__cause__是超时类）或AgentToolError。",
+        "status | code | retryable | 触发条件\n------ | ---- | --------- | ----\nsuccess | OK | — | 工具返回非空内容\nempty | EMPTY_RESULT | — | 工具返回空字符串\ntimeout | TOOL_TIMEOUT | ✅ | 工具抛 AgentTimeoutError\nerror | TOOL_ERROR | ❌ | 工具抛 AgentToolError 或其他异常",
+        "失败时 ToolMessage 的 content 是结构化 JSON：\n成功时 content 保持原样（原始检索片段），不包装。\nretryable 目前只能做到\"timeout=True，其余 False\" —— 更细的分类（限流/服务不可用 → 可重试，\n参数错/代码 bug → 不可重试）还需要 RetrievalError 带更细的错误码。\n✅ 2026-11-17（P2-7）：core/rags/rags.py 的 except Exception: return [] 已改掉 ——\n检索失败抛 RetrievalError（保留 __cause__），工具层据此区分",
+        "status | 什么时候产生 | 对应异常 | 可重试？\n------ | ------ | ---- | ----\nsuccess | 工具返回非空内容 | —（不抛异常） | —\nempty | 工具返回空字符串 | —（不抛异常） | —\ntimeout | 工具抛 AgentTimeoutError | AgentTimeoutError | ✅ 可重试\nerror | 工具抛 AgentToolError 或其他异常 | AgentToolError | ❌ 不可重试",
+        "3.10  RetrievalError（检索失败 ≠ 检索为空）\n• 作用：把\"检索失败\"（Milvus 连不上、查询报错）和\"检索为空\"（正常查了但没匹配到）严格区分开。\n  • 落在哪：core/rags/rags.py:11（定义）、:145-147（抛出点）\n  • 本项目怎么用：retrieve()抛RetrievalError表示失败，返回[]只表示\"确实没检索到\"。工具层agent/tools/rag_tool.py把它翻译成AgentTimeoutError（__cause__是超时类）或AgentToolError。",
+        "• 不用它会怎样：这是 P2-7 修的核心。改之前retrieve()里是except Exception: return []——异常被吞成空列表→ 工具层看到\"空\" → 状态记成empty而不是error/timeout→Milvus 挂了和\"库里没这内容\"在日志里长得一模一样→ 排查方向从一开始就跑偏。",
+        "3 | test/test_rag_model.py | 「检索失败」≠「检索为空」（P2-7 的回归护栏） | ✅ 7 条全过。向量库没连上→抛 RetrievalError；查询报错→抛异常且保留 __cause__；embedding 报错→也抛；检索到 0 条→返回 [] 不抛；正常路径返回文本；/rag 链路检索失败仍返 200；上下文退化为\"没有找到相关文档片段\"",
+        "失败时 ToolMessage 的 content 是结构化 JSON：\n成功时 content 保持原样（原始检索片段），不包装。\nretryable 目前只能做到\"timeout=True，其余 False\" —— 更细的分类（限流/服务不可用 → 可重试，\n参数错/代码 bug → 不可重试）还需要 RetrievalError 带更细的错误码。\n✅ 2026-11-17（P2-7）：core/rags/rags.py 的 except Exception: return [] 已改掉 ——\n检索失败抛 RetrievalError（保留 __cause__），工具层据此区分",
+        "检索异常归一化（4 条） | RetrievalError → AgentToolError；RetrievalError（底层是超时）→ AgentTimeoutError；第三方异常 → AgentToolError；检索为空 → 返回空串（不是异常）",
+        "# | 改动 | 文件\n- | -- | --\n1 | 检索失败抛 RetrievalError，检索为空才返回 [] | core/rags/rags.py\n2 | 工具层翻译：__cause__ 是超时 → AgentTimeoutError（可重试），否则 → AgentToolError | agent/tools/rag_tool.py\n3 | /rag 直连链路吞异常保持 200（失败按\"无相关文档\"处理） | core/rags/rags.py::chat",
+        "retrieve() | RagModel 的公开检索入口，只返 chunks 不调 LLM | core/rags/rags.py:149 | Agent 工具只调这一个公开方法\nresolve_embed_settings() | 索引端与检索端共用的嵌入模型名/base_url 唯一来源 | utils/txt_spliter/vector_main.py:20 | 必须在 EmbeddingModel 构造之后调用（它内部才 load_dotenv）",
+        "3.10  RetrievalError（检索失败 ≠ 检索为空）\n• 作用：把\"检索失败\"（Milvus 连不上、查询报错）和\"检索为空\"（正常查了但没匹配到）严格区分开。\n  • 落在哪：core/rags/rags.py:11（定义）、:145-147（抛出点）\n  • 本项目怎么用：retrieve()抛RetrievalError表示失败，返回[]只表示\"确实没检索到\"。工具层agent/tools/rag_tool.py把它翻译成AgentTimeoutError（__cause__是超时类）或AgentToolError。",
+        "失败时 ToolMessage 的 content 是结构化 JSON：\n成功时 content 保持原样（原始检索片段），不包装。\nretryable 目前只能做到\"timeout=True，其余 False\" —— 更细的分类（限流/服务不可用 → 可重试，\n参数错/代码 bug → 不可重试）还需要 RetrievalError 带更细的错误码。\n✅ 2026-11-17（P2-7）：core/rags/rags.py 的 except Exception: return [] 已改掉 ——\n检索失败抛 RetrievalError（保留 __cause__），工具层据此区分",
+        "✅ 下游只认自家异常（我们现在的做法）\n上层节点只写：\n「翻译一次」的意思是：翻译点唯一。在 rag_tool.py 里翻译一次（离异常最近的地方），\n之后所有上层都不再翻译。如果上层又翻译一遍（比如 except httpx.ReadTimeout），\n就等于「翻译了两次」—— 同一件事有两个真相来源。\n\n7.2 工业化真的这么做吗？—— 是的，这是标准做法，有正式名字"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_7a56ec903303480c94749b9b": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_b953971f065843fcbb0d689d": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_0a08d1b33ae041e0bb34eb56": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_f4dec07428624ad1a63150df": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 3,
+      "anchor_total": 3,
+      "anchor_detail": [
+        {
+          "name": "RetrievalError",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "返回空",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "后果",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        true
+      ],
+      "must_reasons": [
+        "明确抛出RetrievalError",
+        "仅无匹配时返回[]",
+        "区分空结果、超时与故障"
+      ],
+      "must_hit_count": 3,
+      "must_total": 3,
+      "should_hits": [],
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": null,
+      "halluc": 0,
+      "hit_rate": 1.0,
+      "depth_rate": null,
+      "retrieval_hit": 1,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need output JSON. Must assess 1-3. Negative: did answer assert retrieval failure returns empty? No, explicitly opposite, so hit false? Rule negative: \"答案表达了其中任何一条的含义 = 幻觉\"; negative item 1. Need mark negative hit? They ask negative list likely each negative proposition judged whether answer expresses. Rule says negative: asserted false statement = 命中; denied or not mentioned = 不命中. So false reason. Need concise Chinese &lt;=15 chars.\n\nMust 1 yes. 2 yes. 3 yes, says status empty not error timeout, bugs etc. \"不区分的话工具状态就全无意义，超时和 bug 分不开\" answer clearly distinctions and consequences. Hit yes reason &lt;=15.\n\nJSON only.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确抛出RetrievalError\"},{\"index\":2,\"hit\":true,\"reason\":\"仅无匹配时返回[]\"},{\"index\":3,\"hit\":true,\"reason\":\"区分空结果、超时与故障\"}],\"should\":[],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"明确否定失败返回[]\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 21.9,
+      "iter_count": 3,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 1.0
+    },
+    {
+      "id": "B03",
+      "type": "mechanism",
+      "group": "B",
+      "query": "工具调用状态 tool_status 有哪几种状态？key 用的是什么？为什么不能按工具名记？",
+      "answer": "`tool_status` 共有 **4 种状态**：\n\n| status | code | retryable | 触发条件 |\n|---|---|---:|---|\n| `success` | `OK` | `false` | 工具返回非空内容 |\n| `empty` | `EMPTY_RESULT` | `false` | 工具返回空字符串 |\n| `timeout` | `TOOL_TIMEOUT` | `true` | 抛出 `AgentTimeoutError` |\n| `error` | `TOOL_ERROR` | `false` | 抛出 `AgentToolError` 或其他异常 |\n\n其中只有 `timeout` 可重试。[1][2]\n\n### key 用的是什么？\n\n`tool_status` 的 key 应当是**每一次工具调用的 ID**，即：\n\n```python\ntool_call_id = tool_call[\"id\"]\n```\n\n状态按调用 ID 保存，例如：\n\n```python\ntool_status[tool_call_id] = {\n    \"status\": status,\n    \"code\": code,\n    \"retryable\": retryable,\n    ...\n}\n```\n\n这也与返回给模型的 `ToolMessage` 保持一致：`ToolMessage.tool_call_id` 必须和对应 `tool_call[\"id\"]` 配对。[1][2]\n\n### 为什么不能按工具名记？\n\n因为**工具名表示工具类型，调用 ID 才表示某一次具体调用**。同一个工具可能：\n\n- 被连续调用多次；\n- 在不同分支中调用；\n- 并发调用多次。\n\n如果用 `tool_name` 作为 key，例如：\n\n```python\ntool_status[tool_name] = result\n```\n\n后一次调用就会覆盖前一次调用，无法保留每次调动的独立状态。项目已有测试专门验证“两个并发调用必须保留两份状态”。[1]\n\n因此正确原则是：\n\n> **工具名用于说明调用了什么，调用 ID 用于区分这次调用；状态和 `ToolMessage` 都应按调用 ID 配对。**\n\n现有 bug 的本质正是：代码已经取得了 `tool_call[\"id\"]`，并用它配对 `ToolMessage`，但写入 `tool_status` 时误用了 `tool_name`。[1][2]\n\n### 参考资料\n\n- [1] `docs/status/项目现状.md`：“3.5 工具状态（4 态，key 是调用 id）”、第 2.5 节“建议的改法”\n- [2] `agent/nodes/status_tool_wrapper.py:42`、`:59-64`、`:104`、`:122-123`；`agent/state.py:48`；`test_agent_flow.py::test_f1b_two_concurrent_calls_keep_both_statuses`",
+      "retrieved_chunks": [
+        "代码位置：api/dependencies.py:38-53；实测记录见 docs/status/项目现状.md\n\n5.5 工具调用状态机（tool_status）",
+        "3.5 工具状态（4 态，key 是调用 id）\n\nstatus | code | retryable | 触发\n------ | ---- | --------- | --\nsuccess | OK | false | 工具返回非空内容\nempty | EMPTY_RESULT | false | 工具返回空串\ntimeout | TOOL_TIMEOUT | true | 抛 AgentTimeoutError\nerror | TOOL_ERROR | false | 抛 AgentToolError 或其他异常",
+        "而且我们代码里已经在用了：status_tool_wrapper.py:42 的 tool_call_id = tool_call[\"id\"] 就是它。\n只是写 tool_status 的时候没用它当 key，用了 tool_name。所以这个 bug 的本质是：\nid 我们手上一直有，却用错了地方 —— 拿来给 ToolMessage 配对了，却没拿来给状态字典配 key。\n\n2.5 建议的改法（before / after）",
+        "2 | 每个 tool_call 必有对应 ToolMessage（否则 MiniMax 报 HTTP 400） | agent/nodes/status_tool_wrapper.py | test_agent_flow.py::test_invariant_no_dangling_tool_calls（9 场景参数化）\n3 | tool_status 的 key 是调用 id | agent/state.py:48 | test_agent_flow.py::test_f1b_two_concurrent_calls_keep_both_statuses",
+        "实际改动清单\n文件 | 改动\n-- | --\nagent/nodes/status_tool_wrapper.py | 新增 STATUS_META 词汇表；状态 key 改调用 id；value 升级为结构化条目；失败 ToolMessage 改 JSON 载荷；新增 format_tool_status()\nagent/nodes/synth_node.py | 删掉本地的 _format_tool_status()，改用共享的 format_tool_status()",
+        "3.6  tool_status 四态（success / empty / timeout / error）",
+        "status | code | retryable | 触发条件\n------ | ---- | --------- | ----\nsuccess | OK | — | 工具返回非空内容\nempty | EMPTY_RESULT | — | 工具返回空字符串\ntimeout | TOOL_TIMEOUT | ✅ | 工具抛 AgentTimeoutError\nerror | TOOL_ERROR | ❌ | 工具抛 AgentToolError 或其他异常",
+        "3.5 工具状态（4 态，key 是调用 id）\n\nstatus | code | retryable | 触发\n------ | ---- | --------- | --\nsuccess | OK | false | 工具返回非空内容\nempty | EMPTY_RESULT | false | 工具返回空串\ntimeout | TOOL_TIMEOUT | true | 抛 AgentTimeoutError\nerror | TOOL_ERROR | false | 抛 AgentToolError 或其他异常",
+        "• 作用：工具执行结果回给 LLM的消息类型。必须与对应tool_call的id配对（tool_call_id字段）。\n  • 落在哪：agent/nodes/status_tool_wrapper.py:123（失败时构造）、:105（成功时用result自带的内容）\n  • 本项目怎么用：成功时内容是原始检索片段（不做包装）；失败时内容是结构化 JSON 载荷：json\n  {\"code\": \"TOOL_TIMEOUT\", \"status\": \"timeout\", \"retryable\": true, \"message\": \"调用超时：...\"}",
+        "• 作用：记录每一次工具调用的执行结果，供 reflect 节点和调试使用。\n  • 落在哪：agent/nodes/status_tool_wrapper.py:59-64（STATUS_META词表）、:104/:122（写入）、agent/state.py:48（合并 reducer）\n  • 本项目怎么用：\n  | status | 触发条件 | code | retryable |\n  |---|---|---|---|\n  |success| 工具返回非空内容 |OK| — |\n  |empty| 工具返回空字符串 |EMPTY_RESULT| — |"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_508b1705d0a0407a87716496": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_1a85726ec3de47708cd8776e": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 2,
+      "anchor_total": 3,
+      "anchor_detail": [
+        {
+          "name": "四态",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "key=调用id",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "并发覆盖",
+          "expect": "hit",
+          "found": false,
+          "ok": false
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        false
+      ],
+      "must_reasons": [
+        "列明四态及对应名称",
+        "明确key为调用id非工具名",
+        "未述同一轮及超时覆盖实测"
+      ],
+      "must_hit_count": 2,
+      "must_total": 3,
+      "should_hits": [],
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": null,
+      "halluc": 0,
+      "hit_rate": 0.6666666666666666,
+      "depth_rate": null,
+      "retrieval_hit": 0,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need output JSON. Must 3 propositions. Negative check key is tool name: answer explicitly denies, so no hit. Need reasons &lt;=15 Chinese chars. Count roughly.\n\nMust1 \"列明四态及对应名称\" 9.\nMust2 \"明确key为调用id非工具名\" 13 maybe.\nMust3 asks same round MiniMax concurrent same tool 2-3, overwrite success timeout. Answer says concurrent multiple, same tool, later overwrites prior. Doesn't specify MiniMax, 2~3, or exact successful timeout. Is that enough semantic equivalent? Proposition includes concrete example perhaps required. It says \"同一轮里 MiniMax 可能并发调同一个工具 2~3 次，按工具名记会静默覆盖（实测：成功的那条被 timeout 冲掉）\". Answer says same tool may concurrent multiple, by tool name later overwrites previous, but doesn't mention MiniMax nor 2-3 nor timeout replacing success. Core proposition includes empirical detail. Need judge all required info. Rule information absent = not hit. Likely not hit due lacks same round/MiniMax/2-3 and successful timeout overwritten. Could perhaps \"同一个工具...并发调用多次\" and overwrite captures essence but not empirical exact. Since proposition asks specific detail, likely non-hit. Need reason ≤15: \"未述同一轮及超时覆盖实测\" 12. Negative no hit reason \"明确否定按工具名作key\" 11.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"列明四态及对应名称\"},{\"index\":2,\"hit\":true,\"reason\":\"明确key为调用id非工具名\"},{\"index\":3,\"hit\":false,\"reason\":\"未述同一轮及超时覆盖实测\"}],\"should\":[],\"negative\":[{\"index\":1,\"hit\":false,\"reason\":\"明确否定按工具名作key\"}]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 15.8,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 0.7
+    },
+    {
+      "id": "B04",
+      "type": "mechanism",
+      "group": "B",
+      "query": "Agent 的 iter_count 和 reflection_count 两个计数器：上限各是多少，为什么用两个而不是一个？reducer 是累加还是覆盖？",
+      "answer": "### 结论\n\n| 计数器 | 含义 | 上限 | Reducer 行为 | 重置规则 |\n|---|---|---:|---|---|\n| `iter_count` | `iter` 决策节点的调用次数 | `MAX_ITER = 3` | `_reset_or_inc`：通常 **+1 累加**；收到重置值时 **覆盖为 0** | `reflect` 判定为 `rewrite/re_iterate` 时归零 |\n| `reflection_count` | `reflect` 反思节点的调用次数 | `MAX_REFL = 3` | `_inc_refl`：始终 **+1 累加** | **永不重置**，属于全局绝对上限 |\n\n两个上限均来自 YAML 配置，对应 `agent/constants.py:16-17`。【引用 1】\n\n### 为什么用两个计数器，而不是一个？\n\n两者控制的是不同循环：\n\n- `iter_count` 控制工具循环：`iter → tools → iter`。  \n  工具循环不经过 `reflect` 节点，因此它的唯一刹车是 `MAX_ITER`。\n- `reflection_count` 控制反思循环，是防止反思机制无限执行的绝对上限。\n\n旧版 v2.1 只使用一个 `iterations` 计数器，把“决策次数”和“综合次数”混在一起，导致反思触发条件被短路，反思机制经常根本不触发；v2.2 才拆成两个计数器。【引用 1】【引用 2】\n\n另外，`MAX_REFL` **不是工具循环的刹车**；修改路由时两个计数器都要保留。【引用 1】\n\n### Reducer 到底是累加还是覆盖？\n\n- `iter_count`：**条件式处理**——正常情况下累加 1，但 `reflect` 触发 `rewrite/re_iterate` 时写入 0，相当于覆盖归零。\n- `reflection_count`：**纯累加**——每调用一次 `reflect` 就加 1，永不覆盖或清零。【引用 1】\n\n**引用：**\n\n1. 文档章节“2.3 两个计数器（agent/state.py）”及“3.4 iter_count / reflection_count（两个计数器）”。\n2. 文档章节“3.4 超时（3 层，职责不重叠）”中的计数器职责表。",
+      "retrieved_chunks": [
+        "3.4  iter_count / reflection_count（两个计数器）",
+        "2.3 两个计数器（agent/state.py）\n\n字段 | 上限 | reducer | 重置时机\n-- | -- | ------- | ----\niter_count | MAX_ITER=3 | _reset_or_inc | reflect 判 rewrite / re_iterate 时归 0\nreflection_count | MAX_REFL=3 | _inc_refl | 永不重置（绝对上限，防死循环）",
+        "• reflection_count—— reflect 节点调用次数，上限MAX_REFL=3，永不重置（绝对上限，防死循环）。\n  • 不用它会怎样（v2.1 的教训）：v2.1 只有一个iterations计数器，混着\"决策次数\"和\"综合次数\" → 反思触发条件被短路 → 反思机制经常根本不触发。v2.2 拆成两个才修好。\n  • ⚠️ 关键点：MAX_REFL不是工具循环的刹车。工具循环（iter → tools → iter）根本不经过 reflect 节点 → 工具循环唯一的刹车是MAX_ITER。改路由时两个都要保留。",
+        "计数器 | 上限 | 重置时机 | 刹车作用\n--- | -- | ---- | ----\niter_count | MAX_ITER=3 | reflect 判 rewrite/re_iterate 时归 0 | 工具循环 iter → tools → iter 的唯一刹车\nreflection_count | MAX_REFL=3 | 永不重置 | 反思循环的绝对上限\n\n★ MAX_REFL 不是工具循环的刹车 —— 工具循环根本不经过 reflect 节点。\n改路由时两个都要保留。\n\n3.4 超时（3 层，职责不重叠）",
+        "计数器 | 谁加 | 谁清零 | 上限检查位置 | 结论\n--- | -- | --- | ------ | --\niter_count（决策节点调用次数） | iter_node 返回 +1 | reflect_node 在 action != \"end\" 时写 0 | iter_node.py:45 + should_continue.py:17 | 必留——工具循环唯一的刹车\nsynth_count（综合节点调用次数） | synth_node 返回 +1 | 同上 | synth_node.py:51 | 可删——职责已转移给反思节点，当前不可达",
+        "2.3 两个计数器（agent/state.py）\n\n字段 | 上限 | reducer | 重置时机\n-- | -- | ------- | ----\niter_count | MAX_ITER=3 | _reset_or_inc | reflect 判 rewrite / re_iterate 时归 0\nreflection_count | MAX_REFL=3 | _inc_refl | 永不重置（绝对上限，防死循环）",
+        "MAX_ITER / MAX_REFL | 两个上限，来自 YAML | agent/constants.py:16-17 | iter.max_per_cycle=3 / reflect.max_absolute=3\ntool_status 四态 | success / empty / timeout / error | agent/nodes/status_tool_wrapper.py:59-64 | 由 wrap_tool_call 钩子写入 state[\"tool_status\"]",
+        "• reflection_count—— reflect 节点调用次数，上限MAX_REFL=3，永不重置（绝对上限，防死循环）。\n  • 不用它会怎样（v2.1 的教训）：v2.1 只有一个iterations计数器，混着\"决策次数\"和\"综合次数\" → 反思触发条件被短路 → 反思机制经常根本不触发。v2.2 拆成两个才修好。\n  • ⚠️ 关键点：MAX_REFL不是工具循环的刹车。工具循环（iter → tools → iter）根本不经过 reflect 节点 → 工具循环唯一的刹车是MAX_ITER。改路由时两个都要保留。",
+        "• recursion_limit必须显式给：最坏情况 = 每轮2*MAX_ITER + 2步 ×(MAX_REFL + 1)轮 =8 × 4 = 32步 > LangGraph 默认 25 → 撞GraphRecursionError→ask()兜底成\"agent 调用异常\"而不是给出答案。所以RECURSION_LIMIT = _STEPS_PER_ROUND * (MAX_REFL + 1) + 10 = 42（agent/runtime.py:24-25）。",
+        "recursion_limit（递归步数上限） | config={\"recursion_limit\": N} | agent/runtime.py:25（算出 42）、:91（传入） | LangGraph 的兜底上限，超过就抛 GraphRecursionError | 不显式传就用默认 25，而最坏情况是 32 步（8 步/轮 × 4 轮）→ 撞上限 → 用户看到的是\"agent 调用异常\"而不是一个答案"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_8d63c912fb014af4aaff4a0a": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_7ebec094e2bd467ba377fbe7": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 2,
+      "anchor_total": 4,
+      "anchor_detail": [
+        {
+          "name": "MAX_ITER=3",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "MAX_REFL=3",
+          "expect": "hit",
+          "found": true,
+          "ok": true
+        },
+        {
+          "name": "覆盖语义",
+          "expect": "hit",
+          "found": false,
+          "ok": false
+        },
+        {
+          "name": "返回0重置",
+          "expect": "hit",
+          "found": false,
+          "ok": false
+        }
+      ],
+      "must_hits": [
+        true,
+        true,
+        false
+      ],
+      "must_reasons": [
+        "明确区分两循环职责",
+        "明确写出两个上限",
+        "未提LangGraph默认覆盖"
+      ],
+      "must_hit_count": 2,
+      "must_total": 3,
+      "should_hits": [
+        true,
+        false
+      ],
+      "should_hit_count": 1,
+      "should_total": 2,
+      "negative_hits": [
+        false
+      ],
+      "depth_hits": 1,
+      "halluc": 0,
+      "hit_rate": 0.6666666666666666,
+      "depth_rate": 0.5,
+      "retrieval_hit": 0,
+      "binary_pass": null,
+      "raw_judge_output": "<think>We need evaluate. Must 1 yes. 2 yes. 3 no, answer says conditional custom reducer, doesn't mention LangGraph default overwrite. Negative says default reducer accumulative? Answer says iter normal +1, reflection +1, but is it asserting LangGraph default? The negative proposition \"LangGraph 默认 reducer 是累加\". They attribute custom reducers maybe no explicit LangGraph default. Need determine whether \"两个计数器 reducer behavior +1\" can count as expressing default? likely no, because custom named _reset_or_inc and _inc_refl. It may imply these reducers. The wording answer: table \"Reducer 行为\". Not \"LangGraph 默认\". Thus negative not hit. Deep 1 yes. Deep2: says convention reset value 0 overwrites, but doesn't say pure additive writing 0 can't clear; indeed it says reset triggers overwrite to 0 for iter, while pure accum refl never reset. Required exact fact \"纯累加型 reducer 写 0 清不掉（旧+0=旧）\" absent. They say reflection pure accumulate but \"永不覆盖或清零\". Does that semantically express writing zero cannot clear? Not specifically write 0. \"纯累加—每调用一次...永不覆盖或清零\" Could imply 0 doesn't clear? However \"约定返回0表示重置\" explicitly for iter. For pure additive, likely should say old + 0 = old. They didn't. So no.\n\nNeed output exact JSON. Reasons <=15 Chinese chars. \"未提LangGraph默认语义\" count maybe 13. Should array perhaps include should entries? Desired schema shows must, should, negative. Deep propositions likely should category. Output each. For no hit should reason still. Negative no item? Negative list only if hit. Ensure only JSON.</think>\n\n{\"must\":[{\"index\":1,\"hit\":true,\"reason\":\"明确区分两循环职责\"},{\"index\":2,\"hit\":true,\"reason\":\"明确写出两个上限\"},{\"index\":3,\"hit\":false,\"reason\":\"未提LangGraph默认覆盖\"}],\"should\":[{\"index\":1,\"hit\":true,\"reason\":\"明确称永不重置\"},{\"index\":2,\"hit\":false,\"reason\":\"未说明累加写零无效\"}],\"negative\":[]}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 17.3,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": 0.7
+    },
+    {
+      "id": "C01",
+      "type": "honesty",
+      "group": "C",
+      "query": "本项目的 Redis 实例配置在哪个地址和端口？",
+      "answer": "未在当前检索到的文档中找到相关资料，**无法确认本项目 Redis 实例的地址和端口**。\n\n现有资料仅显示 Milvus 地址为 `milvus:19530`（[引用1]），这不是 Redis 配置，不能据此推断 Redis 的 `host/port`。需进一步查看 `docker-compose.yml` 或 `configs/` 中的 `REDIS_HOST`、`REDIS_PORT`、`redis://` 等配置。",
+      "retrieved_chunks": [
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "-- | ---- | -------- | -----\nAttu（官方 GUI） | docker run -d --name ragmi-attu --network ragmi_ragmi-net -p 3100:3000 zilliz/attu:latest → 开 http://localhost:3100 → Milvus 地址填 milvus:19530 | 集合列表 → 点进集合看「别名 / Schema / 一致性级别」 | ✅ 可用。本机已缓存 zilliz/attu:latest 与 zilliz/attu:v2.4，不用拉镜像",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "MilvusClient（pymilvus 客户端） | pymilvus / MilvusClient(uri=...) | core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")） | pymilvus 的 Milvus 2.x 客户端，只认 uri 参数 | 传 host=/port= 会被塞进 **kwargs 静默忽略 → 客户端连到默认 http://localhost:19530：宿主机上碰巧能用，容器里 100% 连不上",
+        "2.9  MilvusClient（pymilvus 客户端）\n• 作用：pymilvus 的客户端。只认uri参数。\n  • 落在哪：core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")）\n  • 本项目怎么用：必须写成uri=f\"http://{host}:{port}\"。pymilvus 2.6 的MilvusClient.__init__没有host/port参数—— 传进去会掉进**kwargs被静默忽略，客户端连到默认的http://localhost:19530。",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "-- | ---- | -------- | -----\nAttu（官方 GUI） | docker run -d --name ragmi-attu --network ragmi_ragmi-net -p 3100:3000 zilliz/attu:latest → 开 http://localhost:3100 → Milvus 地址填 milvus:19530 | 集合列表 → 点进集合看「别名 / Schema / 一致性级别」 | ✅ 可用。本机已缓存 zilliz/attu:latest 与 zilliz/attu:v2.4，不用拉镜像",
+        "代码位置：api/dependencies.py:38-53；实测记录见 docs/status/项目现状.md\n\n5.5 工具调用状态机（tool_status）",
+        "2. ⚠️ 别把锅甩给 Milvus 连接—— pymilvus 2.6 有自己的ConnectionManager，按地址缓存 gRPC channel，第二个客户端的连接开销是 0.000 s。真正贵的是嵌入模型的 HTTP 客户端（每次都新建两个 httpx 客户端，连接池不复用）。",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "• docker-compose.yml:3用的是浮动 tagmilvusdb/milvus:standalone；本机缓存的那份实测是v2.3.14（docker logs ragmi-milvus的Version:行；MilvusClient.get_server_version()同值）。\n  • http://localhost:9091/webui→404。容器内 curl、宿主机 curl、浏览器三处一致；/webui/、/webui/index.html同样 404。",
+        "放大器：restart: no。compose 里 api 服务没配重启策略 → 容器一崩就一直躺着，\ndocker compose ps 才看得到 Exited (1)，不主动查就完全不知情。\n⚠️ 教训：docker compose up -d 不会因为代码变了就重建镜像。\n改了 requirements.txt / Dockerfile / 依赖，必须 docker compose build 再 up -d --force-recreate。\n代码改动（.py）如果走 bind mount（.:/app）能热生效，依赖改动不能。",
+        "修法：docker compose build api + up -d --force-recreate api web。\nrequirements.txt 没动 → pip 层命中缓存，只重建 COPY . . 一层，实测几十秒。\n 沉淀成一条检查项（P3-18）：改 configs/ 也必须重建镜像。\n这跟 D11（依赖漂移 → 容器 Exited (1)）不同 —— 那个至少会崩，\n这个容器活得好好的、健康检查也过、/rag 也返回 200，只是答案全是噪声。\n\"能返回 200\" 不等于\"答对了\" —— 这类分叉必须靠比对两端的模型名来发现。",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "MilvusClient（pymilvus 客户端） | pymilvus / MilvusClient(uri=...) | core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")） | pymilvus 的 Milvus 2.x 客户端，只认 uri 参数 | 传 host=/port= 会被塞进 **kwargs 静默忽略 → 客户端连到默认 http://localhost:19530：宿主机上碰巧能用，容器里 100% 连不上",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "Web UI / Attu / milvus_cli | 三条可视化入口 | docker-compose.yml:3,10 | 本项目 Milvus v2.3.14 没有 Web UI（/webui 实测 404）；用 Attu（--network ragmi_ragmi-net，地址填 milvus:19530）或 pymilvus 直接查 → 见速览 §2.10",
+        "D6 | docker-compose-milvus.yml 不存在 | milvus 服务实际在 docker-compose.yml 里；旧版 CLAUDE.md / README 的 docker-compose -f docker-compose-milvus.yml up -d 命令跑不通（已于 2026-11-15 改为 docker-compose up -d milvus）",
+        "-- | ---- | -------- | -----\nAttu（官方 GUI） | docker run -d --name ragmi-attu --network ragmi_ragmi-net -p 3100:3000 zilliz/attu:latest → 开 http://localhost:3100 → Milvus 地址填 milvus:19530 | 集合列表 → 点进集合看「别名 / Schema / 一致性级别」 | ✅ 可用。本机已缓存 zilliz/attu:latest 与 zilliz/attu:v2.4，不用拉镜像",
+        "B.2 · 可视化入口速查（2026-11-26 实测）\n\n本项目 Milvus 实际版本 v2.3.14（docker-compose.yml:3 的浮动 tag milvusdb/milvus:standalone 拉到的旧镜像）。\ndocker-compose.yml:10 映射的 9091 端口是健康检查端口（/healthz），不是 Web UI。",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "MilvusClient（pymilvus 客户端） | pymilvus / MilvusClient(uri=...) | core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")） | pymilvus 的 Milvus 2.x 客户端，只认 uri 参数 | 传 host=/port= 会被塞进 **kwargs 静默忽略 → 客户端连到默认 http://localhost:19530：宿主机上碰巧能用，容器里 100% 连不上",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "修法：docker compose build api + up -d --force-recreate api web。\nrequirements.txt 没动 → pip 层命中缓存，只重建 COPY . . 一层，实测几十秒。\n 沉淀成一条检查项（P3-18）：改 configs/ 也必须重建镜像。\n这跟 D11（依赖漂移 → 容器 Exited (1)）不同 —— 那个至少会崩，\n这个容器活得好好的、健康检查也过、/rag 也返回 200，只是答案全是噪声。\n\"能返回 200\" 不等于\"答对了\" —— 这类分叉必须靠比对两端的模型名来发现。",
+        "• docker-compose.yml:3用的是浮动 tagmilvusdb/milvus:standalone；本机缓存的那份实测是v2.3.14（docker logs ragmi-milvus的Version:行；MilvusClient.get_server_version()同值）。\n  • http://localhost:9091/webui→404。容器内 curl、宿主机 curl、浏览器三处一致；/webui/、/webui/index.html同样 404。",
+        "根因：docker-compose.yml 里 api 服务只挂了 ./documents 和 ./txt，\nconfigs/ 是在 Dockerfile 的 COPY . . 阶段烤进镜像的 → 容器拿到的是构建那一刻的\nmodel_config.yaml。索引是宿主机用 bge-m3 建的，容器用 bge-large 去查 → 两边维度都是 1024，\nMilvus 不报错，检索结果全是噪声 —— 这正是 CLAUDE.md 里点名的那条\"静默分叉\"路径。\n同一个坑还有第二层：容器里的 utils/docs/manager/filter.py 也是旧的，",
+        "volumes/（仓库内目录，140M） | 旧 bind mount 数据：etcd/ 139M + minio/ 1.7M | 见下方判定\n构建缓存 6.56 GB | docker builder prune | 镜像/卷/容器未受影响；下次 rebuild 重下 pip/apt 层（走阿里云，约 1-2 分钟）",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "MilvusClient（pymilvus 客户端） | pymilvus / MilvusClient(uri=...) | core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")） | pymilvus 的 Milvus 2.x 客户端，只认 uri 参数 | 传 host=/port= 会被塞进 **kwargs 静默忽略 → 客户端连到默认 http://localhost:19530：宿主机上碰巧能用，容器里 100% 连不上",
+        "Web UI / Attu / milvus_cli | 三条可视化入口 | docker-compose.yml:3,10 | 本项目 Milvus v2.3.14 没有 Web UI（/webui 实测 404）；用 Attu（--network ragmi_ragmi-net，地址填 milvus:19530）或 pymilvus 直接查 → 见速览 §2.10",
+        "B.2 · 可视化入口速查（2026-11-26 实测）\n\n本项目 Milvus 实际版本 v2.3.14（docker-compose.yml:3 的浮动 tag milvusdb/milvus:standalone 拉到的旧镜像）。\ndocker-compose.yml:10 映射的 9091 端口是健康检查端口（/healthz），不是 Web UI。",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "D6 | docker-compose-milvus.yml 不存在 | milvus 服务实际在 docker-compose.yml 里；旧版 CLAUDE.md / README 的 docker-compose -f docker-compose-milvus.yml up -d 命令跑不通（已于 2026-11-15 改为 docker-compose up -d milvus）",
+        "1 | 「Milvus 自带 Web UI，compose 已映射 9091，开箱可用」—— 出现在 docs/task/prompt.md §2 与本文件旧版 §2.10 | 本项目没有 Web UI。Milvus 实为 v2.3.14（docker-compose.yml:3 的浮动 tag milvusdb/milvus:standalone 拉到的旧镜像），/webui 实测 404（容器内 / 宿主机 / 浏览器三处）",
+        "问题：Depends 的缓存只跨一次请求，不跨请求。所以 Depends(get_rag_model) 每请求都会重建 RagModel。\n代价实测（[实测] 2026-11-17）：\n\n项 | 耗时\n- | --\nRagModel.__init__ 合计 | ~0.45 s\n└ 其中建嵌入 HTTP 客户端 | ~0.42 s（两个 httpx 客户端各建一次 SSL context）\n└ YAML 读取 + 两次健康检查 RPC | ~0.03 s\n真正的检索 | ~0.10 s",
+        "现在怎么修的：走 client_kwargs 透传 —— client_kwargs 会进\nollama.Client(host=..., **sync_client_kwargs) → httpx → 真正给底层连接一个上限。\n超时值取 YAML PLATFORMS[ollama].timeout（60s），由\nutils/models/embedding_model.py::_init_client 统一注入，检索端和索引端共用。\n注意：timeout 也会作用于 /rag 路径（同一个 embedding 客户端）—— 这不是副作用，",
+        "依赖 | 每次请求的成本 | 做法\n-- | ------- | --\nget_chat_model | 极低（只存一下 model_manager） | 每次请求现建，无所谓\nget_rag_model | ~0.45 秒（其中 ~0.42s 是建 embedding HTTP 客户端：同步+异步两个 httpx 客户端各自建 SSL 上下文；另有 YAML 读 + 两次探活 RPC） | app 级单例：挂在 app.state.rag_model 上，全进程只建一次（P1-4）。连不上时不缓存，下次请求重试",
+        "~~P1-4~~ | ~~/rag 每请求新建 RagModel → 每请求重建 Embeddings 客户端 + 重读配置 + 重探活~~ | ✅ 2026-11-17 已修 —— get_rag_model 移到 api/dependencies.py，做成 app 级单例（FastAPI 的 Depends 缓存只在一个请求内有效，跨请求不复用）。连不上 Milvus 时不缓存，下次请求重试",
+        "⚠️ 这是延迟，不是容量。并发下什么表现，完全没有数据（§3）。\n\n2.3 资源占用\n\n项 | 实测值\n- | ---\n镜像 | ragmi-app:local 2.11 GB（含全部 139 个锁定依赖）\n容器 | 3 个（api / web / milvus）\n数据卷 | 1 个（ragmi_milvus-data，443.9 MB）\nimport main 冷启动 | 5.1 s（.pyc 全冷 12.5 s）\n宿主依赖 | Ollama（bge-m3）+ MiniMax API（花钱）\n\n2.4 质量指标（当前唯一能测准的那类）",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "⚠️ Attu 的地址坑：Attu 跑在容器里，127.0.0.1:19530 指向的是 Attu 自己 → 报 Name resolution failed for target dns:127.0.0.1:19530。必须填 compose 服务名 milvus:19530（同一网络内 getent hosts milvus → 172.23.0.2）。\n- 不用 Attu，用 pymilvus 直接查：更快、零依赖、命令可复现（仓库根目录）：\n  python\n  from pymilvus import MilvusClient",
+        "Attu（官方 GUI） | ✅ 可用，正在跑 | http://localhost:3100（容器 ragmi-attu，镜像 zilliz/attu:latest）",
+        "B.2 · 可视化入口速查（2026-11-26 实测）\n\n本项目 Milvus 实际版本 v2.3.14（docker-compose.yml:3 的浮动 tag milvusdb/milvus:standalone 拉到的旧镜像）。\ndocker-compose.yml:10 映射的 9091 端口是健康检查端口（/healthz），不是 Web UI。",
+        "1 | 「Milvus 自带 Web UI，compose 已映射 9091，开箱可用」—— 出现在 docs/task/prompt.md §2 与本文件旧版 §2.10 | 本项目没有 Web UI。Milvus 实为 v2.3.14（docker-compose.yml:3 的浮动 tag milvusdb/milvus:standalone 拉到的旧镜像），/webui 实测 404（容器内 / 宿主机 / 浏览器三处）",
+        "D6 | docker-compose-milvus.yml 不存在 | milvus 服务实际在 docker-compose.yml 里；旧版 CLAUDE.md / README 的 docker-compose -f docker-compose-milvus.yml up -d 命令跑不通（已于 2026-11-15 改为 docker-compose up -d milvus）",
+        "Web UI / Attu / milvus_cli | 三条可视化入口 | docker-compose.yml:3,10 | 本项目 Milvus v2.3.14 没有 Web UI（/webui 实测 404）；用 Attu（--network ragmi_ragmi-net，地址填 milvus:19530）或 pymilvus 直接查 → 见速览 §2.10",
+        "• docker-compose.yml:3用的是浮动 tagmilvusdb/milvus:standalone；本机缓存的那份实测是v2.3.14（docker logs ragmi-milvus的Version:行；MilvusClient.get_server_version()同值）。\n  • http://localhost:9091/webui→404。容器内 curl、宿主机 curl、浏览器三处一致；/webui/、/webui/index.html同样 404。",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "这个错最阴的地方：宿主机测试全绿，容器起不来。而宿主机 127.0.0.1 恰好就是 Milvus，\n所以\"改成 uri=\"在宿主机上没有任何行为差异，只有容器才暴露。\n已修的三处（全部改成 uri=f\"http://{host}:{port}\"）：",
+        "MilvusClient（pymilvus 客户端） | pymilvus / MilvusClient(uri=...) | core/rags/rags.py:86（MilvusClient(uri=f\"http://{host}:{port}\")） | pymilvus 的 Milvus 2.x 客户端，只认 uri 参数 | 传 host=/port= 会被塞进 **kwargs 静默忽略 → 客户端连到默认 http://localhost:19530：宿主机上碰巧能用，容器里 100% 连不上",
+        "-- | ---- | -------- | -----\nAttu（官方 GUI） | docker run -d --name ragmi-attu --network ragmi_ragmi-net -p 3100:3000 zilliz/attu:latest → 开 http://localhost:3100 → Milvus 地址填 milvus:19530 | 集合列表 → 点进集合看「别名 / Schema / 一致性级别」 | ✅ 可用。本机已缓存 zilliz/attu:latest 与 zilliz/attu:v2.4，不用拉镜像",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "修法：docker compose build api + up -d --force-recreate api web。\nrequirements.txt 没动 → pip 层命中缓存，只重建 COPY . . 一层，实测几十秒。\n 沉淀成一条检查项（P3-18）：改 configs/ 也必须重建镜像。\n这跟 D11（依赖漂移 → 容器 Exited (1)）不同 —— 那个至少会崩，\n这个容器活得好好的、健康检查也过、/rag 也返回 200，只是答案全是噪声。\n\"能返回 200\" 不等于\"答对了\" —— 这类分叉必须靠比对两端的模型名来发现。",
+        "volumes/（仓库内目录，140M） | 旧 bind mount 数据：etcd/ 139M + minio/ 1.7M | 见下方判定\n构建缓存 6.56 GB | docker builder prune | 镜像/卷/容器未受影响；下次 rebuild 重下 pip/apt 层（走阿里云，约 1-2 分钟）",
+        "• docker-compose.yml:3用的是浮动 tagmilvusdb/milvus:standalone；本机缓存的那份实测是v2.3.14（docker logs ragmi-milvus的Version:行；MilvusClient.get_server_version()同值）。\n  • http://localhost:9091/webui→404。容器内 curl、宿主机 curl、浏览器三处一致；/webui/、/webui/index.html同样 404。",
+        "放大器：restart: no。compose 里 api 服务没配重启策略 → 容器一崩就一直躺着，\ndocker compose ps 才看得到 Exited (1)，不主动查就完全不知情。\n⚠️ 教训：docker compose up -d 不会因为代码变了就重建镜像。\n改了 requirements.txt / Dockerfile / 依赖，必须 docker compose build 再 up -d --force-recreate。\n代码改动（.py）如果走 bind mount（.:/app）能热生效，依赖改动不能。",
+        "项 | 数量 | 位置\n- | -- | --\nHTTP 端点 | 9 | /chat /rag /agent/chat /api/upload-and-parse /api/batch-upload-and-parse /debug/simple /available /current_model /switch_model\nLangGraph 节点 | 4 | iter / tools / synth / reflect（agent/graph.py:29-33）",
+        "• 前端统一读API_BASE_URL（默认http://localhost:8000）—— 之前的localhost:8000和api:8000混用直接搞崩了容器部署。\n  • 去哪看：main.py·api/*.py·web_page/*.py",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "代码位置：api/dependencies.py:38-53；实测记录见 docs/status/项目现状.md\n\n5.5 工具调用状态机（tool_status）",
+        "5.6.1 部署实测结果（2026-11-17 初次 / 2026-11-18 重建后复测）\n\ndocker compose up -d --build → 3 容器全部 Up，milvus healthy。\n逐条实测（全部走容器，请求用宿主机 LAN IP 绕开 D10）：",
+        "修法：docker compose build api + up -d --force-recreate api web。\nrequirements.txt 没动 → pip 层命中缓存，只重建 COPY . . 一层，实测几十秒。\n 沉淀成一条检查项（P3-18）：改 configs/ 也必须重建镜像。\n这跟 D11（依赖漂移 → 容器 Exited (1)）不同 —— 那个至少会崩，\n这个容器活得好好的、健康检查也过、/rag 也返回 200，只是答案全是噪声。\n\"能返回 200\" 不等于\"答对了\" —— 这类分叉必须靠比对两端的模型名来发现。",
+        "• docker-compose.yml:3用的是浮动 tagmilvusdb/milvus:standalone；本机缓存的那份实测是v2.3.14（docker logs ragmi-milvus的Version:行；MilvusClient.get_server_version()同值）。\n  • http://localhost:9091/webui→404。容器内 curl、宿主机 curl、浏览器三处一致；/webui/、/webui/index.html同样 404。",
+        "-- | ---- | -------- | -----\nAttu（官方 GUI） | docker run -d --name ragmi-attu --network ragmi_ragmi-net -p 3100:3000 zilliz/attu:latest → 开 http://localhost:3100 → Milvus 地址填 milvus:19530 | 集合列表 → 点进集合看「别名 / Schema / 一致性级别」 | ✅ 可用。本机已缓存 zilliz/attu:latest 与 zilliz/attu:v2.4，不用拉镜像",
+        "volumes/（仓库内目录，140M） | 旧 bind mount 数据：etcd/ 139M + minio/ 1.7M | 见下方判定\n构建缓存 6.56 GB | docker builder prune | 镜像/卷/容器未受影响；下次 rebuild 重下 pip/apt 层（走阿里云，约 1-2 分钟）",
+        "。连接地址填 milvus:19530 —— Attu 在容器里，走 compose 网络 ragmi_ragmi-net，填 localhost 会报 Name resolution failed for target dns:127.0.0.1:19530 | 左树里 Collections 下两个集合 txt_data_1795589457 / txt_data_1795586629；点开前者，Aliases 标签页里 txt_data 指向它；Partitions 只有 _default",
+        "遗留提醒：宿主机上仍有一个裸跑后端（PID 24304）在 127.0.0.1:8000，\n跑的是旧代码。测容器前先停掉它，否则 localhost:8000 测到的是它。\n重建镜像 612e8cd388f9 并 --force-recreate 后，逐条复测：",
+        "• 原因不是路由配错，是镜像里没有 Web UI 资源：容器内find / -iname \"*webui*\"无结果、没有任何.html文件；grep -ac webui /milvus/bin/milvus在 v2.3.14 和 v2.4.0 都是0，到 v2.6.16 才是10—— Web UI 是后来才进镜像的。\n  • 9091 上真正可用的是：REST API/api/v1/...、/metrics、/healthz。",
+        "没有 host / port 参数。写成 MilvusClient(host=..., port=...) 时，这两个 key 会落进\n**kwargs 被 ConnectionConfig.from_uri() 忽略，实际连的是默认的 http://localhost:19530。",
+        "2. ⚠️ 别把锅甩给 Milvus 连接—— pymilvus 2.6 有自己的ConnectionManager，按地址缓存 gRPC channel，第二个客户端的连接开销是 0.000 s。真正贵的是嵌入模型的 HTTP 客户端（每次都新建两个 httpx 客户端，连接池不复用）。"
+      ],
+      "tools_called": [
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search",
+        "rag_search"
+      ],
+      "tool_status": {
+        "call_01a21a8da6b274ecb863c4f3": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8da6b274ecb863c4f4": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_ef08fc0beac041989e5f9fe4": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_9e17abd1ca98401a8d41d898": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_ffaca97af839494eb6b74648": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_7f0c5ea34a9445d4bc8055ba": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_484f4f2ba7252d3531f538e7": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_484f4f2ba7252d3531f538e8": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "chatcmpl-tool-800b72961af4adcd": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "chatcmpl-tool-a1ec96b612cbb157": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "chatcmpl-tool-a95af3ba5393279a": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call-b42cefbe-391e-4279-b670-3b4977a52824": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call-39e588b1-400d-452e-b4c2-b4f99e6a4567": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8e814a75b6acf82bc1": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8e814a75b6acf82bc2": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8e814a75b6acf82bc3": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8e87d675dc8bb93fab": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8e87d675dc8bb93fac": {
+          "tool": "rag_search",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 1,
+      "anchor_total": 1,
+      "anchor_detail": [
+        {
+          "name": "Redis",
+          "expect": "miss",
+          "found": false,
+          "ok": true
+        }
+      ],
+      "must_hits": null,
+      "must_reasons": null,
+      "must_hit_count": null,
+      "must_total": 0,
+      "should_hits": null,
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": null,
+      "depth_hits": null,
+      "halluc": null,
+      "hit_rate": null,
+      "depth_rate": null,
+      "retrieval_hit": null,
+      "binary_pass": false,
+      "raw_judge_output": "{\"pass\":true,\"reason\":\"明确声明未找到Redis配置\"}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 63.5,
+      "iter_count": 3,
+      "reflection_count": 4,
+      "last_action": "end",
+      "repeat": 1,
+      "score": null
+    },
+    {
+      "id": "C02",
+      "type": "placeholder_honesty",
+      "group": "C",
+      "query": "上海今天天气怎么样？",
+      "answer": "上海今天天气晴，气温为 **25℃**。【weather】",
+      "retrieved_chunks": [],
+      "tools_called": [
+        "weather"
+      ],
+      "tool_status": {
+        "call_873d97203cb344b49613ed6a": {
+          "tool": "weather",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": 0,
+      "anchor_total": 1,
+      "anchor_detail": [
+        {
+          "name": "占位",
+          "expect": "hit",
+          "found": false,
+          "ok": false
+        }
+      ],
+      "must_hits": null,
+      "must_reasons": null,
+      "must_hit_count": null,
+      "must_total": 0,
+      "should_hits": null,
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": null,
+      "depth_hits": null,
+      "halluc": null,
+      "hit_rate": null,
+      "depth_rate": null,
+      "retrieval_hit": null,
+      "binary_pass": false,
+      "raw_judge_output": "<think>We need answer judge. Expected preserve marker placeholder/example/non-real weather source. Candidate has [weather] but is that a source marker? Explicit [weather] could be marker? The expected behavior says retain 「占位」/「示例数据」/「非真实天气」类来源标记. [weather] is not clearly any of these, perhaps a citation/tool marker, but not indicating placeholder/example/non-real. So fail. Reason under 20 Chinese chars.</think>\n\n{\"pass\":false,\"reason\":\"未标明占位或示例数据\"}",
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 10.8,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": null
+    },
+    {
+      "id": "D01",
+      "type": "tool",
+      "group": "D",
+      "query": "用计算器算一下 (3+5)*2 等于多少？",
+      "answer": "根据计算器结果：\n\n\\[\n(3+5)\\times 2=8\\times 2=16\n\\]\n\n答案：**16**。[calculator]",
+      "retrieved_chunks": [],
+      "tools_called": [
+        "calculator"
+      ],
+      "tool_status": {
+        "call_e2cc3893a45848cc81d5342e": {
+          "tool": "calculator",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": null,
+      "anchor_total": null,
+      "anchor_detail": [],
+      "must_hits": null,
+      "must_reasons": null,
+      "must_hit_count": null,
+      "must_total": 0,
+      "should_hits": null,
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": null,
+      "depth_hits": null,
+      "halluc": null,
+      "hit_rate": null,
+      "depth_rate": null,
+      "retrieval_hit": null,
+      "binary_pass": true,
+      "raw_judge_output": null,
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 7.4,
+      "iter_count": 2,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": null
+    },
+    {
+      "id": "D02",
+      "type": "tool",
+      "group": "D",
+      "query": "用计算器算一下 7 的 3 次方等于多少？",
+      "answer": "\\(7^3 = 7 \\times 7 \\times 7 = 343\\)。【calculator】",
+      "retrieved_chunks": [],
+      "tools_called": [
+        "calculator",
+        "calculator",
+        "calculator"
+      ],
+      "tool_status": {
+        "chatcmpl-tool-a3fa5ac8a4d6be4e": {
+          "tool": "calculator",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8f00ca7709b1c4fdb4": {
+          "tool": "calculator",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        },
+        "call_01a21a8f00ca7709b1c4fdb5": {
+          "tool": "calculator",
+          "status": "success",
+          "code": "OK",
+          "retryable": false
+        }
+      },
+      "anchor_hits": null,
+      "anchor_total": null,
+      "anchor_detail": [],
+      "must_hits": null,
+      "must_reasons": null,
+      "must_hit_count": null,
+      "must_total": 0,
+      "should_hits": null,
+      "should_hit_count": null,
+      "should_total": 0,
+      "negative_hits": null,
+      "depth_hits": null,
+      "halluc": null,
+      "hit_rate": null,
+      "depth_rate": null,
+      "retrieval_hit": null,
+      "binary_pass": true,
+      "raw_judge_output": null,
+      "judge_error": null,
+      "agent_error": null,
+      "elapsed": 7.4,
+      "iter_count": 3,
+      "reflection_count": 1,
+      "last_action": "end",
+      "repeat": 1,
+      "score": null
+    }
+  ]
+}

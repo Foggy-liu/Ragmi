@@ -50,6 +50,11 @@ docs/*
 !docs/plan/**
 !docs/status/
 !docs/status/**
+# docs/task/ 里只有「答案质量评估」4 个文件是对外证据链（rubric + 题集 + 语料 + 实测结果），
+# 其余是私人草稿（提示词存档、面试材料、简历）—— 不入库
+!docs/task/
+docs/task/*
+!docs/task/答案质量评估*.md
 
 # txt/ 和 documents/ 内容不上传（运行时生成/用户文件），但空目录本身是程序必需的
 txt/*
@@ -80,7 +85,7 @@ test/fixtures/*
 test/e2e/_artifacts/
 
 # 过时测试脚本与一次性探针 —— 只留本地做历史参照，不进仓（免得被当成现行测试）
-# test/eval/ 是唯一活着的离线评估，保留跟踪
+# 两条活着的离线评估保留跟踪：test/eval/（工具路由）+ test/eval_quality/（答案质量 + 反思消融）
 test/archive/
 test/probes/
 

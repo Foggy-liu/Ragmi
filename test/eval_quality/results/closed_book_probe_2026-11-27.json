@@ -1,0 +1,134 @@
+{
+  "created_at": "2026-11-27T09:35:24",
+  "executor_model": "MiniMax-M3.1-Flash",
+  "judge_model": "MiniMax-M2.5",
+  "cases_hash": "b335952574170fe9fef02f315f9a6fc9d7dfe520e2bdf70d8abfee420ed79690",
+  "rows": [
+    {
+      "id": "A01",
+      "query": "本项目的文档切块参数是什么？切块最大多少字符、重叠多少？用的嵌入模型向量维度是多少？",
+      "answer": "当前对话未提供该项目的代码、配置文件或相关文档，因此我无法如实确认具体参数，也不会猜测默认值：\n\n| 参数 | 当前可确认值 |\n|---|---|\n| 文档切块最大字符数 | 无法确认 |\n| 切块重叠字符数 | 无法确认 |\n| 嵌入模型向量维度 | 无法确认 |\n\n请提供项目仓库路径，或贴出包含切块与嵌入配置的文件（如 `config.*`、文档处理/切块模块、Embedding 模型初始化代码）。拿到这些信息后，我可以给出准确数值及其来源位置。",
+      "hit_rate": 0.0,
+      "depth_rate": 0.0,
+      "halluc": 0,
+      "must_hits": [
+        false,
+        false,
+        false
+      ],
+      "must_reasons": [
+        "未表达最大300字符",
+        "未表达重叠30字符",
+        "未表达模型及维度"
+      ],
+      "error": null,
+      "elapsed": 9.4
+    },
+    {
+      "id": "A02",
+      "query": "Agent 图的 recursion_limit 是多少？这个值是写死的吗？",
+      "answer": "如果你指的是 **LangGraph Python** 中通过 `create_react_agent()` 或 `StateGraph.compile()` 创建的 Agent 图：\n\n- 默认 `recursion_limit` 是 **25**。\n- 这个值**不是不可修改的硬编码值**；25 只是 LangGraph 的默认限制，通常按图的 **superstep（节点执行步数）** 计算。\n- 可以在调用时覆盖，例如：\n\n```python\nresult = agent.invoke(\n    {\"messages\": messages},\n    config={\"recursion_limit\": 50},\n)\n```\n\n流式调用同样可以：\n\n```python\nfor chunk in agent.stream(\n    {\"messages\": messages},\n    config={\"recursion_limit\": 50},\n):\n    ...\n```\n\n显式传入的配置优先于默认值。超过限制会抛出 `GraphRecursionError`。\n\n如果你的项目代码在 `invoke()`、`stream()` 或其他配置中显式传了 `recursion_limit`，那么实际运行值就是那个配置，而不一定仍是 25。LangGraph 不同版本也可能调整默认值，因此以当前项目所用版本和调用处配置为准。",
+      "hit_rate": 0.0,
+      "depth_rate": 0.0,
+      "halluc": 0,
+      "must_hits": [
+        false,
+        false
+      ],
+      "must_reasons": [
+        "答案称默认值为25",
+        "未提及MAX_ITER或MAX_REFL"
+      ],
+      "error": null,
+      "elapsed": 20.0
+    },
+    {
+      "id": "A03",
+      "query": "LLM 单次调用超时多少秒？工具超时多少秒？整图总时限多少秒？",
+      "answer": "当前对话未提供相关运行配置，因此无法如实确认具体秒数：\n\n- **LLM 单次调用超时：未知**\n- **工具调用超时：未知**\n- **整图处理总时限：未知**\n\n请提供对应的配置、接口文档或报错日志，我可以据此给出准确数值。",
+      "hit_rate": 0.0,
+      "depth_rate": null,
+      "halluc": 0,
+      "must_hits": [
+        false,
+        false,
+        false
+      ],
+      "must_reasons": [
+        "仅称未知，未说30秒",
+        "仅称未知，未说30秒",
+        "仅称未知，未说90秒"
+      ],
+      "error": null,
+      "elapsed": 4.7
+    },
+    {
+      "id": "A04",
+      "query": "本项目重建向量索引后，线上是怎么切到新集合的？为什么重建不用改代码、不用重启服务？",
+      "answer": "严格来说，我没有看到本项目的仓库或具体配置，因此不能断言实际使用的集合名、向量数据库以及切换 API。但从“重建后不用改代码、不用重启服务”这一现象看，项目采用的应该是**集合别名（alias）机制**，而不是直接把物理集合名写死在线上。\n\n### 线上切换流程\n\n1. 线上应用始终访问一个稳定的逻辑名称，例如 `knowledge_vectors`。\n2. 该别名当前指向旧物理集合，例如 `knowledge_20250301`。\n3. 重建时创建新物理集合，例如 `knowledge_20250310`，重新生成向量并建立索引。\n4. 完成全量重建、增量数据追平以及数量/召回率校验后，在向量数据库中执行一次 **alias 原子切换**：\n   ```text\n   knowledge_vectors:\n       old -> knowledge_20250301\n       new -> knowledge_20250310\n   ```\n5. 切换完成后，新的查询请求就会路由到新集合；旧集合暂时保留一段时间，便于回滚，确认稳定后再清理。\n\n### 为什么不用改代码\n\n因为代码和配置里引用的是稳定别名 `knowledge_vectors`，而不是会随重建变化的物理集合名。重建只改变别名背后的目标集合，应用调用的接口和参数都不变。\n\n### 为什么不用重启服务\n\n别名映射由向量数据库在服务端保存和维护，在线更新即可生效。应用已有数据库连接、连接池和客户端对象都不需要重建，后续请求由数据库按照新的别名映射路由。因此这是一次**数据库侧的元数据切换**，不是应用进程切换。\n\n### 需要注意的前提\n\n- 应用必须访问 alias；如果代码直接写死物理集合名，切换后仍会查旧集合。\n- 写入路径也要正确处理，通常需要写当前别名、双写或停写后追平增量数据，否则切换时可能漏掉最后一段增量。\n- alias 切换通常应保证原子性，并保留旧集合用于快速回滚。\n- 若项目实际并未使用 alias，而是依赖动态配置中心，那么是否需要刷新配置或重启就取决于配置客户端是否支持热更新，不能直接说“一定不用重启”。\n\n所以，核心原因不是“重建本身自动生效”，而是：**新旧物理集合隔离构建，校验完成后，通过在线更新稳定别名，把线上读流量原子切到新集合。**",
+      "hit_rate": 0.3333333333333333,
+      "depth_rate": 0.5,
+      "halluc": 0,
+      "must_hits": [
+        false,
+        false,
+        true
+      ],
+      "must_reasons": [
+        "集合命名未具体命中",
+        "未提Milvus及切换API",
+        "别名切换即时生效"
+      ],
+      "error": null,
+      "elapsed": 15.4
+    },
+    {
+      "id": "B01",
+      "query": "RAGMI 的 Agent 有三层超时，分别负责什么？为什么「超时就杀掉线程」这个做法在本项目行不通？",
+      "answer": "",
+      "hit_rate": null,
+      "depth_rate": null,
+      "halluc": null,
+      "must_hits": null,
+      "must_reasons": null,
+      "error": "RuntimeError: 判分器调用失败：RateLimitError: Error code: 429 - {'type': 'error', 'error': {'type': 'rate_limit_error', 'message': '已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)', 'http_code': '429'}, 'request_id': '075811573dc7cb4a7c99162c1ab0baeb'}",
+      "elapsed": 67.0
+    },
+    {
+      "id": "B02",
+      "query": "RAGMI 的 retrieve() 在检索失败时怎么处理？为什么不直接返回空列表？不这么做会造成什么后果？",
+      "answer": "",
+      "hit_rate": null,
+      "depth_rate": null,
+      "halluc": null,
+      "must_hits": null,
+      "must_reasons": null,
+      "error": "RateLimitError: Error code: 429 - {'type': 'error', 'error': {'type': 'rate_limit_error', 'message': '已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)', 'http_code': '429'}, 'request_id': '0758115974057ed6dff924af75bab7e3'}",
+      "elapsed": 2.0
+    },
+    {
+      "id": "B03",
+      "query": "工具调用状态 tool_status 有哪几种状态？key 用的是什么？为什么不能按工具名记？",
+      "answer": "",
+      "hit_rate": null,
+      "depth_rate": null,
+      "halluc": null,
+      "must_hits": null,
+      "must_reasons": null,
+      "error": "RateLimitError: Error code: 429 - {'type': 'error', 'error': {'type': 'rate_limit_error', 'message': '已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)', 'http_code': '429'}, 'request_id': '0758115b2970078e3332a22c96bb3f47'}",
+      "elapsed": 2.1
+    },
+    {
+      "id": "B04",
+      "query": "Agent 的 iter_count 和 reflection_count 两个计数器：上限各是多少，为什么用两个而不是一个？reducer 是累加还是覆盖？",
+      "answer": "",
+      "hit_rate": null,
+      "depth_rate": null,
+      "halluc": null,
+      "must_hits": null,
+      "must_reasons": null,
+      "error": "RateLimitError: Error code: 429 - {'type': 'error', 'error': {'type': 'rate_limit_error', 'message': '已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)', 'http_code': '429'}, 'request_id': '0758115db53d3d1c065809e2e49e944c'}",
+      "elapsed": 2.1
+    }
+  ]
+}
