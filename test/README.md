@@ -50,7 +50,9 @@ test/
 > ⚠️ **`probes/` 与 `archive/` 都不进版本库**（2026-11-22 起）—— 它们的内容已被 pytest 用例
 > 取代，留着只会让人误以为是现行测试。**干净 clone 看不到这两个目录**。
 > 需要历史脚本时看本地工作区，或 `git log -- test/archive/`。
-> 唯一活着的离线评估已从 `archive/scripts/` 迁到 **`eval/`**（2026-11-22）。
+> 离线评估已从 `archive/scripts/` 迁到 **`eval/`**（2026-11-22）；**2026-11-27 又新增
+> `eval_quality/`** —— 现在是两条活着的离线评估，量的是两件事：
+> `eval/` 量「该不该调 `rag_search`」（路由），`eval_quality/` 量「答得好不好」（答案质量）。
 
 **收集规则**（`pytest.ini`）：
 

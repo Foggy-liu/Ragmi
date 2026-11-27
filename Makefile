@@ -40,14 +40,20 @@ test-e2e:
 test-slow:
 	pytest -m slow -v
 
-# 离线工具路由评估（12 case）。这是 test/ 下唯一活着的离线评估脚本，
-# 2026-11-18 修好了四处失效。两种模式都要真实 MiniMax key，都花钱。
+# 离线工具路由评估（12 case）。2026-11-18 修好了四处失效，
+# 2026-11-26 口径改成具体工具名。两种模式都要真实 MiniMax key，都花钱。
 # 详见 test/eval/README.md。
 test-v22-mock:
 	PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py --mock
 
 test-eval:
 	PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py
+
+# 离线答案质量评估（线 A 端到端 + 线 B 反思消融）。要真实 MiniMax key，都花钱。
+# 详见 test/eval_quality/README.md。
+test-eval-quality:
+	PYTHONIOENCODING=utf-8 python test/eval_quality/run_answer_quality_eval.py --repeat 3
+	PYTHONIOENCODING=utf-8 python test/eval_quality/reflect_ablation_eval.py --repeat 3
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

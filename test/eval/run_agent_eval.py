@@ -35,8 +35,11 @@
 另外补了每 case 耗时、tool_status 四态分布、reflect 的 next_action 决策 ——
 这些是评估"机制是否真的在起作用"的指标。
 
-2026-11-22：从 test/archive/scripts/ 迁到 test/eval/ —— 它是**唯一活着的**离线
+2026-11-22：从 test/archive/scripts/ 迁到 test/eval/ —— 它是当时**唯一活着的**离线
 评估脚本（archive/ 里的都是过时的、且只留本地不上传）。路径改为相对脚本目录。
+
+2026-11-27：test/eval_quality/ 上线（答案质量评估，线 A + 线 B），现在有**两条**活着的
+离线评估 —— 本目录量"工具路由准不准"，eval_quality/ 量"答得好不好"，两者完全隔离。
 """
 
 import argparse

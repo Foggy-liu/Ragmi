@@ -162,9 +162,10 @@ ragmi/
 │   ├── test_vector_split.py       # vector_split() 端到端（slow）
 │   ├── conftest.py + helpers.py + fake_backend.py  # 公共工具层（假 LLM/假检索/假后端）
 │   ├── e2e/                       # L4 浏览器层（Playwright，标 e2e）
-│   ├── eval/                      # 离线工具路由评估（非 pytest，唯一活着的离线评估）
+│   ├── eval/                      # 离线工具路由评估（非 pytest）
 │   │   ├── run_agent_eval.py      #   跑 12 个 case 出路由准确率
 │   │   └── data/                  #   评估集 + 最新跑分快照
+│   ├── eval_quality/              # 答案质量评估（非 pytest，线 A 端到端 + 线 B 反思消融）
 │   └── probes/ + archive/         # 过时脚本与一次性探针（**只留本地，不上传仓**）
 ├── configs/
 │   ├── agent_config.yaml      # MAX_ITER / MAX_REFL / timeout.{llm,tool,total}
@@ -486,8 +487,13 @@ E4（**P1-1** `/rag` 字段名不匹配）。另修 **P1-2**（`calculator` 的 
 
 ### 离线评估、探针与归档
 
-`test/eval/` 是**唯一活着的离线评估**：跑 12 个 case，量工具路由准确率 + 稳定性
+`test/eval/` 是**离线的工具路由评估**：跑 12 个 case，量工具路由准确率 + 稳定性
 （结果见上文"评估结果"），跑法见 [`test/eval/README.md`](./test/eval/README.md)。
+
+`test/eval_quality/` 是**离线的答案质量评估**（2026-11-27 新增，与上面那条**完全隔离**）：
+线 A 端到端量"答得好不好"（12 题 × 3 遍，总分 0.9333），线 B 量"反思节点判得准不准"
+（48 格 × 3 遍，真阳性率 100%、改后改善率真·坏答案 +0.51），
+跑法见 [`test/eval_quality/README.md`](./test/eval_quality/README.md)。
 
 `test/probes/` 是**手动探针脚本**，`test/archive/` 是**过时测试脚本的只读归档**
 （v1/v2.1 的死脚本 + 历史跑分快照）。两者都**已经被 pytest 用例取代** ——

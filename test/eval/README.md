@@ -1,7 +1,8 @@
 # test/eval/ —— 离线工具路由评估
 
-> **一句话**：这是 `test/` 下**唯一活着的离线评估**。跑 12 个 case，量 Agent
-> "该不该调 `rag_search`" 的路由准确率 + 稳定性。
+> **一句话**：这是 `test/` 下**两条活着的离线评估之一**（另一条是
+> [`../eval_quality/`](../eval_quality/README.md)，量"答得好不好"，与本目录**完全隔离**）。
+> 本目录跑 12 个 case，量 Agent "该不该调 `rag_search`" 的路由准确率 + 稳定性。
 >
 > `test/` 其余目录全是 pytest 用例；**这个目录不是 pytest 用例**
 > （文件名不匹配 `test_*.py`，pytest 永不收集）。
