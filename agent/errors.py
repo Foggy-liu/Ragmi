@@ -15,12 +15,13 @@ openai.APITimeoutError ...），类名各不相同、继承关系互不相干。
          ├─ AgentTimeoutError   超时 —— 可重试（网络抖动）
          └─ AgentToolError      工具失败 —— 不可重试（参数错/服务挂/代码 bug）
 
-三层的完整链路：
-    第 1 层  原始异常（httpx.ReadTimeout 等）
+异常翻译的三跳（⚠️ 这是"错误叫什么"的链路，**不是超时层** ——
+超时只有两层计时，见 agent/timeout.py）：
+    第 1 跳  原始异常（httpx.ReadTimeout 等）
               ↓ agent/tools/rag_tool.py 翻译
-    第 2 层  归一化异常（AgentTimeoutError / AgentToolError）
+    第 2 跳  归一化异常（AgentTimeoutError / AgentToolError）
               ↓ agent/nodes/status_tool_wrapper.py 翻译
-    第 3 层  业务状态（tool_status = {"rag_search": "timeout"}）→ 给 LLM 看
+    第 3 跳  业务状态（tool_status = {"rag_search": "timeout"}）→ 给 LLM 看
 """
 import httpx
 

@@ -313,20 +313,24 @@ reflect prompt 硬约束：工具 timeout/error/empty 时不应判 `re_iterate`�
 
 ### 超时机制
 
-三层，职责不重叠：
+**超时只有两层计时**，另有一条与计时正交的错误语义线 —— 三者职责不重叠：
 
 ```text
-第 1 层  异常归一化   agent/errors.py
-         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
-         工具层把第三方异常翻译成自家异常，只翻译一次
-
-第 2 层  单次动作超时 agent/timeout.py :: Timer
+第 1 层  单次动作超时 agent/timeout.py :: Timer
          Timer(TOOL_TIMEOUT).call(fn, ...) —— 超时抛 AgentTimeoutError
 
-第 3 层  整图总时限   state["deadline"] + agent/timeout.py :: is_expired()
+第 2 层  整图总时限   state["deadline"] + agent/timeout.py :: is_expired()
          runtime.ask() 写入 deadline = time.time() + TOTAL_TIMEOUT
          每个节点动手前协作式检查，超时就地收手
+
+错误语义  agent/errors.py（不计时，与上面两层正交）
+         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
+         工具层把第三方异常翻译成自家异常，只翻译一次
 ```
+
+分层的理由是"职责不重叠"：第 1 层管"这一次等多久"、第 2 层管"整张图还能跑多久"、
+错误归一化管"错误叫什么"。**别把归一化算成超时层** —— 它不计时，
+只决定这个失败值不值得重试。
 
 配置在 `configs/agent_config.yaml` 的 `agent.timeout` 段（`llm` / `tool` / `total`），
 由 `agent/constants.py` 加载导出并 assert 校验。改超时只改 YAML。
@@ -422,6 +426,18 @@ class AgentState(TypedDict, total=False):
 "素材充分性"轴，**三个指标的分母都只用标准素材**。
 
 ### Measured (2026-11-27)
+
+> ⚠️ **尺子保持 v4（`rubric_version: v4-2026-11-27`），本轮没有升版。**
+> 2026-11-28 只做了一件事：**把"超时是三层计时"这个错误口径，在代码与文档里改成
+> 「两层计时 + 一条正交的错误语义线」**（`agent/timeout.py` 的 docstring 原文写的就是「两种计时」，
+> 错的是文档把错误归一化算成了第三层）。改的是 `README.md` / `CLAUDE.md` / `docs/status/*` /
+> `agent/errors.py` 的**表述**，没碰生产逻辑、没碰语料、没碰评测尺子。
+> ⚠️ **语料是冻结的**（`documents/` + `txt/` 停在 2026-11-27，`corpus_sha256` = `eae9bb07…`，
+> Milvus alias `txt_data` → `txt_data_1795716420` 2181 行，与之完全一致）→ **不重建索引、不重跑**。
+> 冻结语料里的项目描述仍是**旧的三层口径**（知识库没随代码迭代），评测尺子 v4 与它**同口径** →
+> **线 A 的数字继续可比、尺子继续可跑**；**线 B 不受影响**
+> （标准素材内嵌在 `reflect_ablation_cases.json` 里，不查 Milvus）。
+> ⚠️ **已知代价**：代码/文档说"两层"，语料/尺子说"三层" —— 有意保留，换的是语料指纹和数字可比性。
 
 | | 值 | 稳不稳 |
 |---|---|---|

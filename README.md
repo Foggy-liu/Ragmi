@@ -24,7 +24,7 @@ RAGMI 是一个检索增强生成（RAG）+ LangGraph Agent 的个人知识库�
    LLM 超时把内部异常类名泄露给用户、查询改写丢否定语义、占位标记被剥掉、反思"引用"规则过严。
    全部登记进项目的问题清单，**只登记未修**。
 3. **[技术亮点](#技术亮点)** —— 6 条踩过坑之后才写得出来的工程约束（循环预算推导、官方钩子、
-   按调用 id 存工具状态、三层超时、工具调用不悬空、路由挂载回归测试）。
+   按调用 id 存工具状态、双层超时、工具调用不悬空、路由挂载回归测试）。
 
 ---
 
@@ -105,19 +105,20 @@ reflect
 
 详见 [docs/status/项目现状.md](docs/status/项目现状.md)。
 
-### 三层超时机制
+### 双层超时机制
 
-职责不重叠的三层，全部配置化（改 `configs/agent_config.yaml` 即可）：
+超时只有**两层计时**，另有一条与计时正交的错误语义线 —— 全部配置化（改 `configs/agent_config.yaml` 即可）：
 
 ```text
-第 1 层  异常归一化    agent/errors.py
-         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
-
-第 2 层  单次动作超时  agent/timeout.py :: Timer
+第 1 层  单次动作超时  agent/timeout.py :: Timer
          Tool 30s · LLM 30s
 
-第 3 层  整图总时限    state["deadline"] + is_expired()
+第 2 层  整图总时限    state["deadline"] + is_expired()
          Total 90s，每个节点动手前协作式自检，超时就地收手
+
+错误语义  agent/errors.py（不计时）
+         AgentError / AgentTimeoutError（可重试） / AgentToolError（不可重试）
+         —— 管"错误叫什么"，不管"等多久"
 ```
 
 ### 多模型支持
@@ -372,8 +373,10 @@ tool_node = ToolNode(ALL_TOOLS, wrap_tool_call=status_wrapper)
 
 成功时内容保持原样（原始检索片段），不做包装——最终答案由 Agent 的 LLM 综合。
 
-### 4. 超时是三层协作，不是一层硬杀
+### 4. 超时是两层计时，不是一层硬杀
 
+- **两层计时各管一件事**：单次动作等多久 / 整张图还能跑多久；
+  错误归一化是**第三条正交的线** —— 管"错误叫什么"，不计时
 - **异常归一化只做一次**，在工具内部翻译成自家异常，下游不再重复翻译
 - **Python 杀不掉线程**（没有 `Thread.terminate()`），超时只能"不再等"，底层线程仍会跑完并占连接
   → 不用"外层包 `graph.invoke`"的写法（会留僵尸线程），而是**协作式**：每个节点动手前自检 `deadline`
@@ -762,7 +765,7 @@ PYTHONIOENCODING=utf-8 python test/eval/run_agent_eval.py                       
 - [x] Docker 容器化部署
 - [x] Self-Reflection 闭环（v2.1）
 - [x] Agent 图重构：四节点 + 双计数器（v2.2）
-- [x] 三层超时机制 + 异常归一化
+- [x] 双层超时机制 + 异常归一化
 - [x] 工具状态结构化 + 悬空修复
 - [x] `retrieve()` 契约拆分：区分"空结果"与"检索失败"（2026-11-17，P2-7）
 - [x] 切分参数改为从 YAML 读取（2026-11-17，P1-7）
